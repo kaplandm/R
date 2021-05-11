@@ -8,6 +8,7 @@ for example,
 `source('https://raw.githubusercontent.com/kaplandm/kaplandm.github.io/main/R/quantile_inf.R')`
 
 For Stata code, try  
-`net from https://kaplandm.github.io/stata`
+`net from https://kaplandm.github.io/stata`  
+or download .zip files from [my website](https://kaplandm.github.io/).
 
 Just email me kaplandm@missouri.edu if you have any questions.
