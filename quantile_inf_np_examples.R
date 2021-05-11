@@ -461,7 +461,7 @@ graph.VaR <- function(X.cts.all,Y.cts.all,rets,rets.VaR.unconditional,X.cts.varn
 #September 1986 to November 1998 for rows 1:2527
 #Y (and X3) is daily returns computed as ln(P_t/P_{t-1}) in terms of daily prices P_t
 #Data input from Chernozhukov & Fernandez-Val (2011),
-# available @ http://faculty.missouri.edu/~kaplandm/data/
+# available @ https://drive.google.com/file/d/0B-_LUSJVBv20aWRweldoWTN0eU0/view?usp=sharing
 VaR.data.raw <- read.table("CF2011_VaR_data.txt",colClasses='numeric')
 Y       <- VaR.data.raw[1528:2527,5] #VaR.data.raw[1528:2527, 5]
 Xt      <- VaR.data.raw[1528:2527,1:4] #VaR.data.raw[1528:2527, 1:4]
@@ -500,7 +500,7 @@ graph.VaR(X.cts.all,Y.cts.all,rets.VaR,rets.VaR.unconditional,X.cts.varname)
 # Example E.0b: VaR
 #
 #Google finance: http://www.google.com/finance/historical?cid=26001&startdate=Aug+29%2C+1986&enddate=Aug+31%2C+2012&num=200
-#.csv available @ http://faculty.missouri.edu/~kaplandm/data/
+#.csv available @ https://drive.google.com/file/d/0B-_LUSJVBv20anFLdTZpQlJfbms/view?usp=sharing
 VaR.data.raw <- read.csv("OXY_daily_data_no_holidays.csv")
 Y <- VaR.data.raw$DailyLnRet
 X <- VaR.data.raw$LagLnRet
@@ -624,7 +624,7 @@ for (k in 1:4) {cat(rets.wages.all[[k]]$bandwidth.joint);cat('\n')}
 #
 # Example E.4a: health outcome (hemoglobin) vs. HH expenditure from IFLS, w/ or w/o HH head edu
 #
-#For exp_hb_edu_merge_files.do file and resulting exp_hb_edu.dta file: http://www.mizzou.edu/~kaplandm/data/
+#For exp_hb_edu_merge_files.do file and resulting exp_hb_edu.dta file: https://drive.google.com/drive/folders/0B-_LUSJVBv20bTNmX3NYeFJKZ2c?usp=sharing
 #Data from: Indonesia Family Life Survey (IFLS) 2007, prepped with exp_hb_edu_merge_files.do
 #http://www.rand.org/labor/FLS/IFLS.html
 #Similar to Li, Lin, and Racine (2013), but not restricted to Sundanese, and possibly other differences with filtering/accounting; results look quite different than w/ their dataset.
