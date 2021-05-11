@@ -1,5 +1,5 @@
-# Feedback: KaplanDM@Missouri.edu
-# Author (original): David M. Kaplan
+# Feedback: kaplandm@missouri.edu
+# Author: David M. Kaplan
 # Nonparametric confidence intervals (etc.) for conditional quantile-related objects.
 # 
 # quantile.inf.np() to calculate confidence intervals
@@ -11,10 +11,11 @@
 # 'Fractional order statistic approximation for nonparametric conditional quantile inference' by Matt Goldman and David M. Kaplan, 2017, https://doi.org/10.1016/j.jeconom.2016.09.015
 # 'Non-parametric inference on conditional quantile differences and linear combinations, using L-statistics' by Matt Goldman and David M. Kaplan, 2018, https://doi.org/10.1111/ectj.12095
 # 
-# See also http://faculty.missouri.edu/~kaplandm/code/quantile_inf.R for related *unconditional* inference.
+# See also https://github.com/kaplandm/R/blob/main/quantile_inf.R
+# for related *unconditional* inference.
 # 
-# Empirical examples: http://faculty.missouri.edu/~kaplandm/code/quantile_inf_np_examples.R
-# Simulations: http://faculty.missouri.edu/~kaplandm/code/quantile_inf_np_sims.R
+# Empirical examples: https://github.com/kaplandm/R/blob/main/quantile_inf_np_examples.R
+# Simulations: https://github.com/kaplandm/R/blob/main/quantile_inf_np_sims.R
 
 
 ###################
@@ -24,7 +25,7 @@
 ###################
 prob.loaded <- (exists("quantile.inf") && exists("quantile.inf.CIuh"))
 success <-
-  tryCatch({source("http://faculty.missouri.edu/kaplandm/code/quantile_inf.R");TRUE},
+  tryCatch({source('https://raw.githubusercontent.com/kaplandm/R/main/quantile_inf.R');TRUE},
            error=function(w) FALSE)
 if (!success) {
   success <-
@@ -34,7 +35,7 @@ if (!success) {
     if (prob.loaded) {
       warning("Couldn't load quantile_inf.R, but it seems like you already did.")
     } else {
-      stop("Failed to source() quantile_inf.R from web or local file.  You may download and source() it yourself, or at least make sure it's in your getwd().  Currently available at http://faculty.missouri.edu/kaplandm/code/")
+      stop("Failed to source() quantile_inf.R from web or local file.  You may download and source() it yourself, or at least make sure it's in your getwd().  Currently available at https://github.com/kaplandm/R")
     }
   }
 }
