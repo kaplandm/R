@@ -1,5 +1,5 @@
-# David M. Kaplan, KaplanDM@Missouri.edu
-# First: 8 Aug 2012; updated 31 Jan 2015, Aug 2015 (QY/FL)
+# David M. Kaplan, kaplandm@missouri.edu
+# First: 8 Aug 2012; updated 31 Jan 2015, Aug 2015 (QY/FL), 13may2021 (URLs)
 # Simulations for CIs for (locally smoothed) nonparametric conditional quantiles
 #pt=pointwise, bonf=Bonferroni, unif=use Hotelling tube
 
@@ -14,7 +14,9 @@ SAVE.FLAG <- TRUE ############
 # Load packages
 library(quantreg) #needed if use rqss (Koenker method)
 library(splines)  #rq/bs--obviously rqss is better, but just to check...
+# source('https://raw.githubusercontent.com/kaplandm/R/main/quantile_inf_np.R')
 source("quantile_inf_np.R") #for GK method
+
 
 #
 # rqss uniform bands: from code for rqss.plot
