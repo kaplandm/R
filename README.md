@@ -7,8 +7,4 @@ To load within R, use
 for example,  
 `source('https://raw.githubusercontent.com/kaplandm/R/main/quantile_inf.R')`
 
-For Stata code, try  
-`net from https://kaplandm.github.io/stata`  
-or download .zip files from [my website](https://kaplandm.github.io/).
-
 Just email me kaplandm@missouri.edu if you have any questions.
