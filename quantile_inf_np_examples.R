@@ -1,4 +1,21 @@
-source("quantile_inf_np.R")
+# by Dave Kaplan  https://kaplandm.github.io/
+# Questions? kaplandm@missouri.edu
+
+# Load code
+prob.loaded <- exists("quantile.inf.np")
+success <-
+  tryCatch({source('https://raw.githubusercontent.com/kaplandm/R/main/quantile_inf_np.R');TRUE},
+           error=function(w) FALSE)
+if (!success) {
+  success <- tryCatch({source("quantile_inf_np.R");TRUE}, error=function(w) FALSE)
+  if (!success) {
+    if (prob.loaded) {
+      warning("Couldn't load quantile_inf_np.R, but it seems like you already did.")
+    } else {
+      stop("Failed to source() quantile_inf.R from web or local file.  You may download and source() it yourself, or at least make sure it's in your getwd().  Currently available at https://github.com/kaplandm/R")
+    }
+  }
+}
 
 # Examples of using quantile.inf.np(), with both simulated and observed data
 
@@ -13,7 +30,6 @@ SUBMAX <- Inf #max subsample size for CI comparison
 require(foreign) #to load .dta files
 require(KernSmooth) #for dpill()
 require(fields) #for qsreg()
-source("quantile_inf_np.R")
 raw <- vector('list',12)
 for (i in 1:12) {
   raw[[i]] <- read.dta(sprintf("20%02d_dvhh_ukanon.dta",i),convert.factors=FALSE)
@@ -91,7 +107,6 @@ for (catind in 1:5) {
   w <- ifelse(w<0,0,w)
   w.orig <- w
   #
-  # source("quantile_inf.R")
   tmp50 <- quantile.inf(X=w,p=0.50,ALPHA=0.01)
   tmp75 <- quantile.inf(X=w,p=0.75,ALPHA=0.01)
   tmp90 <- quantile.inf(X=w,p=0.90,ALPHA=0.01)
@@ -285,14 +300,12 @@ y0s <- Y.fn(x0s) #no add'l effect of heterosk. since p-quantile of U is zero
 iqr0s <- sig.fn(x0s)*(qnorm(0.75,0,1)-qnorm(0.25,0,1))
 
 # EXAMPLE S.1a: NO DISCRETE X, single quantile
-source("quantile_inf_np.R")
 system.time(
 rets <- quantile.inf.np(Y=Y,X=X,x0s=x0s, p=p,ALPHA=ALPHA,JOINT.FLAG=TRUE,ONESIDED=0,KERNEL.TYPE='gaussian')
 )
 plot.quantile.inf.np(rets,plot.data=F,CI.interpolate=T)
 
 # EXAMPLE S.1b: NO DISCRETE X, joint upper & lower quartile
-source("quantile_inf_np.R")
 x0sj <- x0s[seq(from=2,to=length(x0s)-1,by=3)]
 system.time(
 rets <- quantile.inf.np(Y=Y,X=X,x0s=x0sj, p=c(0.75,0.25),ALPHA=ALPHA,JOINT.FLAG=TRUE,METHOD.TYPE='joint', BETA.BLOCK.SIZE=2500, BETA.BLOCKS=1)
@@ -305,7 +318,6 @@ points(c(x0sj,x0sj),c(rets[[1]]$CI.pointwise.lows[,2],rets[[1]]$CI.pointwise.hig
 legend('bottomright', inset=0.01, legend=c('Data','Upper quartile CI','Lower quartile CI'), pch=c(20,2,6), col=c(1,4,3), lwd=2, lty=NA, cex=1.5)
 
 # EXAMPLE S.1c: NO DISCRETE X, lincom (IQR) inference
-source("quantile_inf_np.R")
 x0sl <- x0s[seq(from=1,to=length(x0s),by=5)]
 iqr0sl <- iqr0s[seq(from=1,to=length(iqr0s),by=5)]
 system.time(
@@ -320,7 +332,6 @@ legend('top', inset=0.01, legend=c('True IQR','L-stat CI'), pch=c(20,3), col=c(1
 # EXAMPLE S.2: SINGLE BINARY DUMMY
 #Data are sorted so that dummy=1 gets generally higher values.
 X2 <- cbind(X,as.integer(Y>Y.fn(X))) #X2 <- cbind(X,c(rep.int(0,n/2),rep.int(1,n/2)))
-source("quantile_inf_np.R")
 rets2 <- quantile.inf.np(Y=Y,X=X2,x0s=x0s, p=p,ALPHA=ALPHA,JOINT.FLAG=TRUE,ONESIDED=0,KERNEL.TYPE='gaussian')
 plot.quantile.inf.np(rets2,plot.data=F,CI.interpolate=T,x.axis.title="Simulated cts X")
 
@@ -328,12 +339,10 @@ plot.quantile.inf.np(rets2,plot.data=F,CI.interpolate=T,x.axis.title="Simulated 
 #Data are simply replicated so that the graphs for (0,0) and (0,1) should be identical, and (1,0) and (1,1) should also be identical.
 Y3 <- c(Y,Y)
 X3 <- cbind(rbind(X2,X2),c(rep.int(0,n),rep.int(1,n)))
-source("quantile_inf_np.R")
 rets3 <- quantile.inf.np(Y=Y3,X=X3,x0s=x0s, p=p,ALPHA=ALPHA,JOINT.FLAG=TRUE,ONESIDED=0,KERNEL.TYPE='gaussian')
 plot.quantile.inf.np(rets3,plot.data=F,CI.interpolate=T,x.axis.title="Simulated cts X")
 
 # EXAMPLE S.4: TREATMENT, NO DISCRETE
-source("quantile_inf_np.R")
 X2 <- cbind(X,as.integer(Y>Y.fn(X))) #X2 <- cbind(X,c(rep.int(0,n/2),rep.int(1,n/2)))
 rets4 <- quantile.inf.np(Y=Y,X=X2,x0s=x0s, p=p,ALPHA=ALPHA,JOINT.FLAG=T,ONESIDED=0,METHOD.TYPE='qte')
 plot.quantile.inf.np(rets4,plot.data=T,CI.interpolate=T,CI.type='both', title='L-stat 95% CI for\nconditional median treatment effect')
@@ -356,7 +365,6 @@ mtext("Y",side=4,line=3, cex=2)
 legend('bottomright',legend=c('Data (treated)','Data (control)','Pointwise','Joint'), pch=c(84,67,3,4), col=c(1,1,3,4), lwd=2, lty=NA, inset=0.01, cex=1.5, bg='white', y.intersp=0.9)
 
 # EXAMPLE S.5: TREATMENT, ONE DISCRETE
-source("quantile_inf_np.R")
 X2 <- cbind(X,as.integer(Y>Y.fn(X))) #X2 <- cbind(X,c(rep.int(0,n/2),rep.int(1,n/2)))
 X3 <- cbind(rbind(X2,X2),c(rep.int(0,n),rep.int(1,n)))
 rets5 <- quantile.inf.np(Y=c(Y,-Y),X=X3,x0s=x0s, p=p,ALPHA=ALPHA,JOINT.FLAG=F,ONESIDED=0,METHOD.TYPE='qte')
@@ -375,7 +383,6 @@ plot.quantile.inf.np(rets5,plot.data=T,CI.interpolate=T,title='L-stat 95% CI for
 #
 # Example E.0: value-at-risk (VaR)
 #
-source("quantile_inf_np.R")
 #Graphing fn for both 2a and 2b
 graph.VaR <- function(X.cts.all,Y.cts.all,rets,rets.VaR.unconditional,X.cts.varname="X",plot.data=FALSE,ylim=c(-.08,.08),xlim=c(-.05,.05),legpos="topright",datacex=0.1,lwd=1,datapch=1) {
   pt.lo <- vector("list",length(rets));  pt.lo.ss <- vector("list",length(rets))
@@ -519,7 +526,6 @@ graph.VaR(X.cts.all=X,Y.cts.all=Y,rets=rets.VaR,rets.VaR.unconditional,X.cts.var
 #
 #Conditional VaR w/ cts X and by year
 filter <- as.logical(X.per!=0)
-source("quantile_inf_np.R")
 rets.VaR.yearly <- quantile.inf.np(Y=Y[filter],X=cbind(X[filter],X.per[filter]),x0s=quantile(X[filter],seq(from=0.16-min(p,1-p),to=0.87+min(p,1-p),by=0.05)),p=p,ALPHA=ALPHA)
 rets.VaR.yearly[[1]]$X.discrete <- ifelse(rets.VaR.yearly[[1]]$X.discrete==1,"1990s","2000s")
 rets.VaR.yearly[[2]]$X.discrete <- ifelse(rets.VaR.yearly[[2]]$X.discrete==1,"1990s","2000s")
@@ -537,7 +543,6 @@ plot2.quantile.inf.np(rets.VaR.yearly,plot.data=FALSE,CI.type='joint',x.axis.tit
 # Example E.1: motorcycle crash data
 #
 library(MASS)
-source("quantile_inf_np.R")
 rets.mcycle <- quantile.inf.np(Y=mcycle[,2],X=mcycle[,1],x0s=5:50,p=0.5,ALPHA=0.1)
 plot.quantile.inf.np(rets.mcycle,plot.data=FALSE,CI.interpolate=T,x.axis.title="Time (ms after impact)",y.axis.title="Acceleration (g)")
 #points(mcycle[,1],mcycle[,2],pch=16,cex=0.1)
@@ -558,7 +563,6 @@ attach(nat) #make variables accessible by just using names
 weight.g          <- 1000*weight; #was in kg(?), now g
 m.wt.gain.lbs.net <- m_wtgain - 2.20462*weight
 #
-source("quantile_inf_np.R")
 ALPHA <- 0.1;  p <- 0.10
 filter <- as.logical((ed_hs+(educ==0)) * married * (1-black))
 system.time(rets.birthweight <- quantile.inf.np(Y=weight.g[filter],X=cbind(mom_age[filter],smoke[filter]),x0s=seq(from=22,to=37,by=1),p=p,ALPHA=ALPHA,JOINT.FLAG=TRUE)) #~15 seconds
@@ -581,7 +585,6 @@ library(foreign)
 cps80 <- read.dta("census80.dta",convert.factors=FALSE)
 cps90 <- read.dta("census90.dta",convert.factors=FALSE)
 cps00 <- read.dta("census00.dta",convert.factors=FALSE)
-source("quantile_inf_np.R")
 ALPHA <- 0.1
 for (i in 1:3) {
 if (i==1) {cps<-cps80} else if (i==2) {cps<-cps90} else {cps<-cps00}
@@ -630,7 +633,6 @@ for (k in 1:4) {cat(rets.wages.all[[k]]$bandwidth.joint);cat('\n')}
 #Similar to Li, Lin, and Racine (2013), but not restricted to Sundanese, and possibly other differences with filtering/accounting; results look quite different than w/ their dataset.
 #Also need to restrict to one person per hh (say, youngest) to make iid assumption more plausible (else, probably strong intra-household correlation, e.g. from similar genetics).  Even then, could argue for spatial correlation.
 library(foreign) #for .dta input
-source("quantile_inf_np.R")
 ifls.raw <- read.dta("exp_hb_edu.dta")
 #limit to children
 ifls.kids <- ifls.raw[ifls.raw$age<=15 & ifls.raw$age>=2,]
@@ -703,7 +705,6 @@ plot2.quantile.inf.np(rets.ifls.hb.edu,plot.data=F,CI.type='pointwise',CI.interp
 plot.thresh.fn(21)
 #
 # CQTE inference
-source('quantile_inf_np.R')
 system.time(rets2.ifls.hb.edu <- quantile.inf.np(Y=ifls$hb_adj[filter],X=cbind(logexp[filter],edu.hi[filter]),x0s=x0s,p=p,ALPHA=ALPHA,METHOD.TYPE='qte')) #~17 seconds
 plot.quantile.inf.np(rets2.ifls.hb.edu,plot.data=T,CI.type='both',CI.interpolate=FALSE,x.axis.title="Ln per capita expenditure (Rp/yr)",y.axis.title="Adjusted hemoglobin difference (g/dl)",title=sprintf("L-stat %g%% CI for %g-quantile treatment\neffect of HH head's education, in children",100*(1-ALPHA),p),xlim=c(12,22),ylim=c(-1,22), datacex=0.25)
 plot.thresh.fn(21)
