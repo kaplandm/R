@@ -1,8 +1,20 @@
 # Simulations for Goldman and Kaplan (2017), "Fractional order statistic approximation for nonparametric conditional quantile inference"
 # Questions? Comments? kaplandm@missouri.edu
 
-tryCatch(source("quantile_inf.R"),
-         error=function(w) { cat("First download the file quantile_inf.R currently available from http://faculty.missouri.edu/~kaplandm/code/quantile_inf.R and save it in the same directory as quantile_inf_np.R (or elsewhere in R's path)."); stop(w) } )
+prob.loaded <- exists("quantile.inf")
+success <-
+  tryCatch({source('https://raw.githubusercontent.com/kaplandm/R/main/quantile_inf.R');TRUE},
+           error=function(w) FALSE)
+if (!success) {
+  success <- tryCatch({source("quantile_inf.R");TRUE}, error=function(w) FALSE)
+  if (!success) {
+    if (prob.loaded) {
+      warning("Couldn't load quantile_inf.R, but it seems like you already did.")
+    } else {
+      stop("Failed to source() quantile_inf.R from web or local file.  You may download and source() it yourself, or at least make sure it's in your getwd().  Currently available at https://github.com/kaplandm/R")
+    }
+  }
+}
 
 SAVEFLAG <- TRUE  # TRUE=save results to file; FALSE=display in console only.
 
