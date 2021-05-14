@@ -9,11 +9,24 @@
 #   then exogenous, then intercept
 # return value "h" is the actual bandwidth used;
 #    "hhat" is the plug-in (or desired) bandwidth
-# As you can see, ivqr.see() is basically a wrapper for
-# gmmq() and ivqr.bw()
+# As you can see, ivqr.see() is basically a wrapper for gmmq()
 
-# source('https://raw.githubusercontent.com/kaplandm/R/main/gmmq.R')
-source('gmmq.R') # or use above line instead
+# Load code
+prob.loaded <- exists("gmmq")
+success <-
+  tryCatch({source('https://raw.githubusercontent.com/kaplandm/R/main/gmmq.R');TRUE},
+           error=function(w) FALSE)
+if (!success) {
+  success <- tryCatch({source("gmmq.R");TRUE}, error=function(w) FALSE)
+  if (!success) {
+    if (prob.loaded) {
+      warning("Couldn't load gmmq.R, but it seems like you already did.")
+    } else {
+      stop("Failed to source() quantile_inf.R from web or local file.  You may download and source() it yourself, or at least make sure it's in your getwd().  Currently available at https://github.com/kaplandm/R")
+    }
+  }
+}
+
 
 ivqr.see <- function(tau,Y,D=NULL,X.exog=NULL,Z.excl=NULL,h,b.init=NULL) {
   # Validate/set up data
