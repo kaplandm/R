@@ -478,7 +478,7 @@ gmmq.example.fn <- function() {
   time2 <- system.time(ret2 <- gmmq(tau=tau,Y=cbind(Y,X[,2]),X=X[,-2],Z.excl=matrix(Z[,2],ncol=1),dB=dim(X)[2],Lambda=function(y,x,b)y[,1]-y[,2]*b[1]-x%*%b[-1],Lambda.derivative=NULL,h=LOWh,VERBOSE=TRUE))
   print(time1) # w/ derivative = faster
   print(time2) # w/o derivative = slower
-  cbind(ret1$b,ret2$b,ret3$b[c(1,15,2:14)]) #identical
+  cbind(ret1$b,ret2$b) # identical up to 4 decimals
 }
 
 #EOF

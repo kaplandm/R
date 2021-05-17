@@ -22,7 +22,7 @@ if (!success) {
     if (prob.loaded) {
       warning("Couldn't load gmmq.R, but it seems like you already did.")
     } else {
-      stop("Failed to source() quantile_inf.R from web or local file.  You may download and source() it yourself, or at least make sure it's in your getwd().  Currently available at https://github.com/kaplandm/R")
+      stop("Failed to source() gmmq.R from web or local file.  You may download and source() it yourself, or at least make sure it's in your getwd().  Currently available at https://github.com/kaplandm/R")
     }
   }
 }
