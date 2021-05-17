@@ -459,8 +459,10 @@ LRV.est.fn <- function(tau,Y,X,Z,Lambda,beta.hat,Itilde,h,structure=c('iid','ts'
 # EXAMPLE: Job Training Partnership Act data
 # gmmq.example.fn() to run
 gmmq.example.fn <- function() {
-  # Data from http://faculty.missouri.edu/~kaplandm/code/ivqr_see_replication_files.zip
-  jtpa <- read.csv("http://faculty.missouri.edu/~kaplandm/data/JTPA_merged.csv")
+  # Data from Kaplan & Sun (2017) replication .zip: https://drive.google.com/file/d/1N4WmGq6MOxeP5klN3D3iUgGWGj_KH8vP/view
+  # or, .csv only: https://drive.google.com/file/d/1AoV-9yqkkzINChmiTorbPk1MV0Du2NxZ/view
+  id <- "1AoV-9yqkkzINChmiTorbPk1MV0Du2NxZ" # google file ID
+  jtpa <- read.csv(sprintf("https://docs.google.com/uc?id=%s&export=download", id))
   ym <- jtpa[jtpa$male==1,c("y")] 
   zm <- jtpa[jtpa$male==1,c("z")]
   dm <- jtpa[jtpa$male==1,c("d")]
@@ -472,18 +474,11 @@ gmmq.example.fn <- function() {
   Y <- ym; X <- cbind(om,dm,xm); Z <- cbind(om,zm,xm)
   # 
   tau <- 0.5
-  # if not already loaded somehow: source('http://faculty.missouri.edu/~kaplandm/code/gmmq.R')
-  # w/ derivative (faster)
   time1 <- system.time(ret1 <- gmmq(tau=tau,Y=cbind(Y,X[,2]),X=X[,-2],Z.excl=matrix(Z[,2],ncol=1),dB=dim(X)[2],Lambda=function(y,x,b)y[,1]-y[,2]*b[1]-x%*%b[-1],Lambda.derivative=function(y,x,b)-cbind(y[,2],x),h=LOWh,VERBOSE=TRUE,RETURN.Z=FALSE,b.init=0))
-  print(time1)
-  # w/o derivative (slower)
   time2 <- system.time(ret2 <- gmmq(tau=tau,Y=cbind(Y,X[,2]),X=X[,-2],Z.excl=matrix(Z[,2],ncol=1),dB=dim(X)[2],Lambda=function(y,x,b)y[,1]-y[,2]*b[1]-x%*%b[-1],Lambda.derivative=NULL,h=LOWh,VERBOSE=TRUE))
-  print(time2)
-  # compare with Kaplan and Sun (2017): http://faculty.missouri.edu/~kaplandm/code/ivqr_see.R
-  source('http://faculty.missouri.edu/~kaplandm/code/ivqr_see.R')
-  time3 <- system.time(ret3 <- ivqr_see(tau,Y,X,Z,LOWh))
-  print(time3)
-  cbind(ret1$b,ret2$b,ret3$b) #order of 1st two parameters switched, o/w identical
+  print(time1) # w/ derivative = faster
+  print(time2) # w/o derivative = slower
+  cbind(ret1$b,ret2$b,ret3$b[c(1,15,2:14)]) #identical
 }
 
 #EOF
