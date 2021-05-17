@@ -461,8 +461,18 @@ LRV.est.fn <- function(tau,Y,X,Z,Lambda,beta.hat,Itilde,h,structure=c('iid','ts'
 gmmq.example.fn <- function() {
   # Data from Kaplan & Sun (2017) replication .zip: https://drive.google.com/file/d/1N4WmGq6MOxeP5klN3D3iUgGWGj_KH8vP/view
   # or, .csv only: https://drive.google.com/file/d/1AoV-9yqkkzINChmiTorbPk1MV0Du2NxZ/view
-  id <- "1AoV-9yqkkzINChmiTorbPk1MV0Du2NxZ" # google file ID
-  jtpa <- read.csv(sprintf("https://docs.google.com/uc?id=%s&export=download", id))
+  googleID <- "1AoV-9yqkkzINChmiTorbPk1MV0Du2NxZ" # google file ID
+  success <-
+    tryCatch({jtpa <- read.csv(sprintf("https://docs.google.com/uc?id=%s&export=download", googleID));
+    TRUE},  error=function(w) FALSE)
+  if (!success) {
+    success <-
+      tryCatch({df <- read.csv("JTPA_merged.csv"); TRUE},
+               error=function(w) FALSE)
+    if (!success) {
+      stop("Failed to load JTPA_merged.csv from web or local file; should be available at https://drive.google.com/drive/folders/0B-_LUSJVBv20bTNmX3NYeFJKZ2c or through https://kaplandm.github.io")
+    }
+  }
   ym <- jtpa[jtpa$male==1,c("y")] 
   zm <- jtpa[jtpa$male==1,c("z")]
   dm <- jtpa[jtpa$male==1,c("d")]
