@@ -1,5 +1,5 @@
 # Code implementing (shifted) CRRA utility version of
-# "Inference for Stochastic Dominance on Sets of Utility Functions"
+# "Inference on Consensus Ranking of Distributions"
 # by David M. Kaplan (me)
 # Questions? kaplandm@missouri.edu
 
@@ -38,20 +38,6 @@ rsd <- function(Y0, Y1, ALPHA=0.1, SHIFT.GRID=0, SYMMETRIC=TRUE, THETA.GRID=seq(
   SHIFT.GRID <- sort(c(SHIFT.GRID))
   if (!is.vector(SHIFT.GRID)) stop("SHIFT.GRID must be a numeric vector.")
   if ((max(THETA.GRID)>=1) && (min(Y0,Y1)-max(SHIFT.GRID)<=0)) stop("Must have strictly positive min(Y0,Y1)-max(SHIFT.GRID)")
-  # if (!is.numeric(SHIFT.MAX) || length(SHIFT.MAX)!=1 || SHIFT.MAX<0) {
-  #   stop("SHIFT.MAX must be a non-negative number")
-  # }
-  # if (!is.numeric(NSHIFT) || length(NSHIFT)!=1 || is.na(NSHIFT) || NSHIFT<=0 || abs(NSHIFT-round(NSHIFT))>0.001) {
-  #   stop("NSHIFT must be a positive integer (number of shifts in grid for utility function)")
-  # } else { NSHIFT <- as.integer(round(NSHIFT)) }
-  # if (SHIFT.MAX==0 && NSHIFT!=1) {
-  #   NSHIFT <- 1
-  #   warning("Setting NSHIFT=1 since SHIFT.MAX=0")
-  # }
-  # if (NSHIFT==1 && !is.na(SHIFT.MAX) && SHIFT.MAX!=0) {
-  #   warning("Setting SHIFT.MAX=0 since NSHIFT=1")
-  #   SHIFT.MAX <- 0
-  # }
   if (!is.numeric(BREP) || length(BREP)!=1 || is.na(BREP) || BREP<=0 || abs(BREP-round(BREP))>0.001) {
     stop("BREP must be a positive integer (number of bootstrap replications)")
   } else { BREP <- as.integer(round(BREP)) }
@@ -88,25 +74,6 @@ rsd <- function(Y0, Y1, ALPHA=0.1, SHIFT.GRID=0, SYMMETRIC=TRUE, THETA.GRID=seq(
       stop("missing values (NA) and NaN's not allowed if 'na.rm' is FALSE")
     }
   }
-  # # Check for negative values
-  # tmp <- min(c(Y0,Y1))
-  # if (is.na(SHIFT.MAX)) {
-  #   SHIFT.MAX <- max(tmp-0.1,tmp*0.9)
-  # } else if (SHIFT.MAX>=tmp) {
-  #   warning("SHIFT.MAX too large; decreasing to below min(c(Y0,Y1))")
-  #   SHIFT.MAX <- max(tmp-0.1,tmp*0.9)
-  # }
-  # SHIFT.GRID <- seq(from=0, to=SHIFT.MAX, length.out=NSHIFT)
-  # if (tmp<=0) {
-  #   Y0 <- Y0-tmp+0.1
-  #   Y1 <- Y1-tmp+0.1
-  #   warning("Smallest value in Y0 and Y1 is <=0; shifting to be all >0, and setting NSHIFT=1")
-  #   NSHIFT <- 1
-  # } else if (tmp<=0.1) {
-  #   NSHIFT <- 1
-  #   warning("Smallest value in Y0 and Y1 is very close to zero; setting NSHIFT=1")
-  # }
-  # if (NSHIFT==1) SHIFT.GRID <- 0
   
   ### ACTUAL METHOD
 
@@ -198,11 +165,6 @@ rsd <- function(Y0, Y1, ALPHA=0.1, SHIFT.GRID=0, SYMMETRIC=TRUE, THETA.GRID=seq(
                     THETA.GRID=rep(x=THETA.GRID, times=length(length(SHIFT.GRID))),
                     Lband=Lband, Uband=Uband, 
                     innerCSind=innerCSind, outerCSind=outerCSind))
-  # return(rbind(THETA.GRID, Lband, Uband, innerCSind, outerCSind))
-  # return(list(theta.grid=THETA.GRID,
-  #             unif.conf.band.for.EUdiff=rbind(Lband,Uband),
-  #             inner.CS=THETA.GRID(innerCSind),
-  #             outer.CS=THETA.GRID(outerCSind)))
 }
 
 # CRRA utility function
