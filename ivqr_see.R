@@ -36,7 +36,7 @@ ivqr.see <- function(tau,Y,D=NULL,X.exog=NULL,Z.excl=NULL,h,b.init=NULL) {
     dD <- ncol(D)
   }
   if (is.null(X.exog)) {
-    X <- matrix(data=1, nrow=length(Y), ncol=1)
+    X <- matrix(data=1, nrow=nrow(Y), ncol=1)
   } else {
     X.exog <- as.matrix(X.exog)
     X <- cbind(X.exog,1)
