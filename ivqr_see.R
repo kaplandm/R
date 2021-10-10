@@ -22,7 +22,7 @@ if (!success) {
     if (prob.loaded) {
       warning("Couldn't load gmmq.R, but it seems like you already did.")
     } else {
-      stop("Failed to source() gmmq.R from web or local file.  You may download and source() it yourself, or at least make sure it's in your getwd().  Currently available at https://github.com/kaplandm/R")
+      stop("Failed to source() gmmq.R from web or local file (possibly because a package like pracma is not installed? check the other warnings/errors).  You may download and source() it yourself, or at least make sure it's in your getwd().  Currently available at https://github.com/kaplandm/R")
     }
   }
 }
@@ -55,6 +55,7 @@ ivqr.see <- function(tau,Y,D=NULL,X.exog=NULL,Z.excl=NULL,h,b.init=NULL) {
         tmp <- coef(rq(Y~D+X.exog))
       }
       b.init <- tmp[c(2:length(tmp),1)]
+      if (!is.numeric(b.init) || is.nan(b.init) || is.infinite(b.init) || length(b.init)<1) b.init <- 0
     } else {
       b.init <- 0
     }
@@ -66,6 +67,10 @@ ivqr.see <- function(tau,Y,D=NULL,X.exog=NULL,Z.excl=NULL,h,b.init=NULL) {
     if (length(b.init)==1 && b.init==0) b.init <- ret0$b
     hhat <- ivqr.bw(p=tau, Y=Y, X=cbind(D,X), 
                     b.init=ret0$b)
+    if (!is.numeric(hhat) || is.nan(hhat) || is.infinite(hhat)) {
+      warning("Problem with plug-in bandwidth; instead using smallest feasible bandwidth.")
+      return(list(b=ret0$b, h=ret0$h, hhat=ret0$h))
+    }
   } else {
     hhat <- h
   }
@@ -148,7 +153,8 @@ ivqr.bw <- function(p,Y,X,b.init) {
 		dgamma(Ueval,k,scale=theta)
 	}
 	fgam0r1_fn <- function(k,theta,Ueval) {
-			-(Ueval^(k-1)*1/theta^3*theta^(-k)*exp(-Ueval/theta))/gamma(k)+(Ueval^(k-2)*1/theta^2*theta^(-k)*exp(-Ueval/theta)*(k-1)*3)/gamma(k)-(Ueval^(k-3)*theta^(-k)*exp(-Ueval/theta)*(k-1)*(k-2)*3)/(theta*gamma(k))+(Ueval^(k-4)*theta^(-k)*exp(-Ueval/theta)*(k-1)*(k-2)*(k-3))/gamma(k)
+		# ORIGINAL (equivalent but get Inf "errors" b/c not grouping Ueval/theta): -(Ueval^(k-1)*1/theta^3*theta^(-k)*exp(-Ueval/theta))/gamma(k)+(Ueval^(k-2)*1/theta^2*theta^(-k)*exp(-Ueval/theta)*(k-1)*3)/gamma(k)-(Ueval^(k-3)*theta^(-k)*exp(-Ueval/theta)*(k-1)*(k-2)*3)/(theta*gamma(k))+(Ueval^(k-4)*theta^(-k)*exp(-Ueval/theta)*(k-1)*(k-2)*(k-3))/gamma(k)
+           -((Ueval/theta)^(k-1)*1/theta^3*theta^(-1)*exp(-Ueval/theta))/gamma(k)+((Ueval/theta)^(k-2)*1/theta^2*theta^(-2)*exp(-Ueval/theta)*(k-1)*3)/gamma(k)-((Ueval/theta)^(k-3)*theta^(-3)*exp(-Ueval/theta)*(k-1)*(k-2)*3)/(theta*gamma(k))+((Ueval/theta)^(k-4)*theta^(-4)*exp(-Ueval/theta)*(k-1)*(k-2)*(k-3))/gamma(k)
 	}
 	fGEV0_fn <- function(xi,sig,gmu) {
 		dgev.ls.fn(0,xi,gmu,sig)
@@ -202,7 +208,7 @@ ivqr.bw <- function(p,Y,X,b.init) {
 	if (!require(MASS)) {
 		stop('Please install the R package MASS to run this code.')
 	}
-	t.MLE.est <- tryCatch(fitdistr(x=Uhat,densfun=dt.ls.fn,start=list(m = mean(Uhat), sigma = sd(Uhat), df = 10),lower=c(-Inf,0,1), control=list(maxit=200)),
+	t.MLE.est <- tryCatch(fitdistr(x=Uhat,densfun=dt.ls.fn,start=list(m = mean(Uhat), sigma = sd(Uhat), df = 100),lower=c(-Inf,0,1), control=list(maxit=200)),
 						warning=function(w) NA,
 						error=function(w) NA
 						) # If warning/error, don't use (set to Inf)
@@ -218,7 +224,7 @@ ivqr.bw <- function(p,Y,X,b.init) {
 	}
 	tmp.sig <- sd(Uhat)*sqrt(6)/pi
 	tmp.mu <- mean(Uhat) - tmp.sig*(-digamma(1)) #approx 0.5772... (Euler's Constant)
-	gev.MLE.est <- tryCatch(suppressWarnings(fitdistr(x=Uhat,densfun=dgev.ls.fn,list(xi=0, mu=tmp.mu, sig=tmp.sig), method='BFGS', control=list(maxit=200))), 
+	gev.MLE.est <- tryCatch(suppressWarnings(fitdistr(x=Uhat,densfun=dgev.ls.fn,list(xi=0, mu=tmp.mu, sig=2*tmp.sig), method='BFGS', control=list(maxit=200))), 
 	                        #warning=function(w) NA,
 	                        error=function(w) {
 	                          tryCatch(suppressWarnings(fitdistr(x=Uhat,densfun=dgev.ls.fn, list(xi=0, mu=tmp.mu, sig=tmp.sig), lower=c(-Inf,-Inf,0), control=list(maxit=200))), 
@@ -250,6 +256,6 @@ ivqr.bw <- function(p,Y,X,b.init) {
 	}
 	mu <- mean(Uhat); sig <- sd(Uhat)
 	hoptests_N <- hopt_estfn_N((mu+(0==mu)*.01),sig,d,n)
-	h <- min(hoptests_t,hoptests_N,hoptests_gev,hoptests_gam)
+	h <- min(hoptests_t,hoptests_N,hoptests_gev,hoptests_gam , na.rm=TRUE)
   return(c(h=h))
 }
