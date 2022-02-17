@@ -6,28 +6,26 @@
 # Future extensions to do: 1) stepdown, 2) pretest
 
 # Input: vectors Y0 and Y1 (and optionally other arguments).
-#   The utility function has risk aversion parameter theta
-#       varying across THETA.GRID and shift parameter s
-#       varying across SHIFT.GRID, applying the CRRA
-#       utility function to y-s.
+#   The utility function has
+#       risk aversion parameter theta varying across THETA.GRID
+#       and shift parameter s varying across SHIFT.GRID,
+#       applying the CRRA utility function to y-s.
 # Output: confidence band for expected utility difference,
 #   and inner and outer confidence sets,
-#   in this case sets of theta, which is the risk aversion
-#   parameter in the CRRA utility function.
-#   The first row in the returned matrix is the theta grid used;
-#   the second and third rows are the lower and upper (respectively)
-#   functions of the expected utility difference uniform
-#   confidence band.  The last rows indicate which entries in
-#   theta.grid are included (1) or excluded (0) in the inner
-#   and outer confidence sets.
+#   in this case sets of (theta,s).
+#   The return value is a data.frame whose first two columns show
+#   s and theta values, followed by the lower and upper functions of the
+#   uniform confidence band (Lband and Uband), followed by the inner and
+#   outer confidence sets (TRUE if value is included, FALSE if not).
 #   The 2-sided band has level (1-ALPHA)*100%, 
 #   which is also P(innerCS \subseteq TrueSet \subseteq outerCS).
 #   If SYMMETRIC=FALSE, then everything is "equal-tailed" and
 #   the 1-sided bands and CSs each have confidence level (1-ALPHA/2)*100%
+#   (For example, use ALPHA=0.1 and SYMMETRIC=FALSE to get a one-sided 95% inner CS.)
 # Note: if THETA.GRID is not sufficiently rich, then
 #   the outer CS may not truly be an outer CS, and
 #   the inner CS may be conservative.
-rsd <- function(Y0, Y1, ALPHA=0.1, SHIFT.GRID=0, SYMMETRIC=TRUE, THETA.GRID=seq(from=0, to=3, by=0.2), BREP=199L, na.rm=FALSE) {
+consensus <- function(Y0, Y1, ALPHA=0.1, SHIFT.GRID=0, SYMMETRIC=TRUE, THETA.GRID=seq(from=0, to=3, by=0.2), BREP=199L, na.rm=FALSE) {
 
   ### VALIDATE ARGUMENTS
   
