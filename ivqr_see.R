@@ -1,12 +1,13 @@
 # Implementation of estimator from
 # Kaplan and Sun (2017), "Smoothed estimating equations for instrumental variables quantile regression" (Econometric Theory)
-# Also available in Stata; visit  https://kaplandm.github.io/index.html#sivqr
-# Questions? Comments? email Dave: kaplandm@missouri.edu
+# Also available in Stata; visit  https://kaplandm.github.io/#sivqr
+# Questions? Comments? email Dave  (https://kaplandm.github.io)
 # 
 # ! an intercept will be included automatically;
 #   you don't need one in X.exog or Z.excl
 # ! careful of the order of coefficients: first endogenous,
 #   then exogenous, then intercept
+# ! standard errors assume iid sampling
 # return value "h" is the actual bandwidth used;
 #    "hhat" is the plug-in (or desired) bandwidth
 # As you can see, ivqr.see() is basically a wrapper for gmmq()
@@ -27,8 +28,20 @@ if (!success) {
   }
 }
 
-
-ivqr.see <- function(tau,Y,D=NULL,X.exog=NULL,Z.excl=NULL,h,b.init=NULL) {
+# tau: 0<tau<1 is the quantile index, like tau=0.5 for median
+# Y: a vector of the observed scalar outcome variable for each observation
+# D: a matrix of the endogenous regressors; each row is a different observation, 
+#    each column is a different variable
+# X.exog: a matrix similar to D but with exogenous regressors
+# Z.excl: a matrix like D or X.exog but with the excluded instruments (exogenous 
+#         variables that are not part of the model for Y); the variables in 
+#         Z.excl instrument for the endogenous regressors in D
+# h: desired smoothing bandwidth, or else plug-in bandwidth is used if h is not
+#    specified
+# b.init: initial value of coefficient vector for numerical search, or else
+#         QR is used for initial value if b.init is not specified
+# iidSE: report standard errors? (TRUE/FALSE) only valid for iid sampling
+ivqr.see <- function(tau, Y, D=NULL, X.exog=NULL, Z.excl=NULL, h, b.init=NULL, iidSE=TRUE) {
   # Validate/set up data
   dD <- 0
   if (!is.null(D)) {
@@ -76,7 +89,7 @@ ivqr.see <- function(tau,Y,D=NULL,X.exog=NULL,Z.excl=NULL,h,b.init=NULL) {
   }
   # Actually run the estimator
   ret1 <- gmmq(tau=tau, Y=cbind(Y,D), X=X, 
-               Z.excl=Z.excl, dB=dD+dX, h=hhat, b.init=b.init)
+               Z.excl=Z.excl, dB=dD+dX, h=hhat, b.init=b.init, iidSE=iidSE)
   # Add names/labels for coefficients
   ret1$b <- c(ret1$b)
   if (is.null(D)) {
@@ -87,7 +100,9 @@ ivqr.see <- function(tau,Y,D=NULL,X.exog=NULL,Z.excl=NULL,h,b.init=NULL) {
     names(ret1$b) <- c(sprintf('endog.%d',1:ncol(cbind(D))),
                        sprintf('exog.%d',1:ncol(cbind(X.exog))),'(Intercept)')
   }
-  return(list(b=ret1$b,h=ret1$h,hhat=hhat))
+  ret <- list(b=ret1$b, h=ret1$h, hhat=hhat)
+  if (iidSE) ret$se <- ret1$se
+  return(ret)
 }
 
 # Implementation of plug-in bandwidth from
@@ -204,7 +219,7 @@ ivqr.bw <- function(p,Y,X,b.init) {
 
 	Uhat <- Y - X%*%b.init
 	# Shift Uhat dist'n such that p-quantile=0
-	Uhat <- Uhat - quantile(Uhat, p)
+	Uhat <- Uhat - quantile(Uhat, p, na.rm=TRUE)
 	if (!require(MASS)) {
 		stop('Please install the R package MASS to run this code.')
 	}
