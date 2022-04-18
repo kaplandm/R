@@ -141,6 +141,7 @@ ordinal.latent.CS <- function(X, Y, alpha=0.1, N=1e4, ordinal.values,
     }
   }
   return(list(talpha=talpha, tbeta=tbeta, ordinal.values=VV, 
+              FXhat=Fhat_X, FYhat=Fhat_Y,
               ConfX=ConfX, ConfY=ConfY, innerCSranges=innerCSranges))
 }
 # EOF
