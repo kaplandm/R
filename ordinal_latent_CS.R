@@ -21,6 +21,11 @@
 #        which is the union of all the [lower,upper] ranges
 ordinal.latent.CS <- function(X, Y, alpha=0.1, N=1e4, ordinal.values, 
                               weightX, weightY, FXhat, FYhat, nX, nY){ 
+  # Basic error checking
+  if (missing(X) || missing(Y)) {
+    if (missing(FXhat) || missing(FYhat) || missing(nX) || missing(nY)) stop("Must supply either (X, Y) or (FXhat, FYhat, nX, nY).")
+  }
+  
   # Set/save seeds, for replicability
   oldseed <- NULL
   if (exists(".Random.seed",.GlobalEnv)) {  #.Random.seed #restore state at end
@@ -36,20 +41,28 @@ ordinal.latent.CS <- function(X, Y, alpha=0.1, N=1e4, ordinal.values,
     warning("Argument ordinal.values must be numeric and not contain NA; ignoring and determining automatically.")
     VV <- NULL
   } else {
-    VV <- ordinal.values
+    VV <- sort(unique(ordinal.values))
+    if (missing(X)) {
+      if (max(FXhat)<1 || max(FYhat)<1) {
+        VV <- c(VV, max(VV)+1)
+        FXhat <- c(FXhat, 1);  FYhat <- c(FYhat, 1)
+      }
+    } else {
+      if (max(VV)<max(X,Y)) VV <- c(VV, max(X,Y))
+    }
   }
   if (is.null(VV)) {
     uX <- sort(unique(X))
     uY <- sort(unique(Y))
-    VV <- sort(intersect(unique(Y), unique(X)))
-    tmp <- which(uX==min(VV))
-    if (tmp>1) VV <- c(uX[tmp-1], VV)
-    tmp <- which(uY==min(VV))
-    if (tmp>1) VV <- c(uY[tmp-1], VV)
-    tmp <- which(uX==max(VV))
-    if (tmp<length(uX)) VV <- c(VV, uX[tmp+1])
-    tmp <- which(uY==max(VV))
-    if (tmp<length(uY)) VV <- c(VV, uY[tmp+1])
+    VV <- sort(unique(c(min(X,Y), intersect(unique(Y), unique(X)), max(X,Y))))
+    # tmp <- which(uX==min(VV))
+    # if (tmp>1) VV <- c(uX[tmp-1], VV)
+    # tmp <- which(uY==min(VV))
+    # if (tmp>1) VV <- c(uY[tmp-1], VV)
+    # tmp <- which(uX==max(VV))
+    # if (tmp<length(uX)) VV <- c(VV, uX[tmp+1])
+    # tmp <- which(uY==max(VV))
+    # if (tmp<length(uY)) VV <- c(VV, uY[tmp+1])
   }
   
   # J=number of categories, labeled 1,2,...,J
@@ -78,7 +91,7 @@ ordinal.latent.CS <- function(X, Y, alpha=0.1, N=1e4, ordinal.values,
       Fhat_X <- rep(NA, J)
       Fhat_X[J] <- 1
       for (j in 1:(J-1)) {
-        Fhat_X[j] <- sum(weightX[X<=j]) / weightsumX
+        Fhat_X[j] <- sum(weightX[X<=VV[j]]) / weightsumX
       }
     }
     if (missing(weightY)) {
@@ -88,12 +101,13 @@ ordinal.latent.CS <- function(X, Y, alpha=0.1, N=1e4, ordinal.values,
       Fhat_Y <- rep(NA, J)
       Fhat_Y[J] <- 1
       for (j in 1:(J-1)) {
-        Fhat_Y[j] <- sum(weightY[Y<=j]) / weightsumY
+        Fhat_Y[j] <- sum(weightY[Y<=VV[j]]) / weightsumY
       }
     }
   }
  
   # To be a little conservative: replace 0 with 1/n, replace 1 with 1-1/n
+  FXhat <- Fhat_X;  FYhat <- Fhat_Y  # save actual estimates
   Fhat_X[Fhat_X==0] <- 1/nX
   Fhat_Y[Fhat_Y==0] <- 1/nY
   Fhat_X[Fhat_X==1] <- (1-1/nX)
@@ -109,27 +123,39 @@ ordinal.latent.CS <- function(X, Y, alpha=0.1, N=1e4, ordinal.values,
   }
 
   # Estimate Sigma_tX and Sigma_tY from paper (t-statistic covariance matrices)
-  var_covX <- diag(1/sqrt(diag(SigmaXhat)) )%*% SigmaXhat %*% t(diag(1/sqrt(diag(SigmaXhat))))
-  var_covY <- diag(1/sqrt(diag(SigmaYhat)) )%*% SigmaYhat %*% t(diag(1/sqrt(diag(SigmaYhat))))
+  if (J>2) {
+    var_covX <- diag(1/sqrt(diag(SigmaXhat)) )%*% SigmaXhat %*% t(diag(1/sqrt(diag(SigmaXhat))))
+    var_covY <- diag(1/sqrt(diag(SigmaYhat)) )%*% SigmaYhat %*% t(diag(1/sqrt(diag(SigmaYhat))))
+  } else {
+    var_covX <- var_covY <- 1
+  }
   
   # Critical value simulation
   # Simulate N normal vectors (for X t-statistics)
-  chX <- t(chol(var_covX))
-  mvnX <- t(chX %*% matrix(rnorm(N*(J-1)), nrow=J-1, ncol=N))
-  Tmin <- apply(X=mvnX, MARGIN=1, FUN=min) # take minimum
-  rm(mvnX)  # free up memory from the big normal matrix
-  # Compute \tilde\alpha from paper (1-\tilde\alpha = pointwise coverage prob)
-  talpha <- quantile(pnorm(Tmin), probs=1-sqrt(1-alpha), type=6)
+  if (J>2) {
+    chX <- t(chol(var_covX))
+    mvnX <- t(chX %*% matrix(rnorm(N*(J-1)), nrow=J-1, ncol=N))
+    Tmin <- apply(X=mvnX, MARGIN=1, FUN=min) # take minimum
+    rm(mvnX)  # free up memory from the big normal matrix
+    # Compute \tilde\alpha from paper (1-\tilde\alpha = pointwise coverage prob)
+    talpha <- quantile(pnorm(Tmin), probs=1-sqrt(1-alpha), type=6)
+  } else {
+    talpha <- 1-sqrt(1-alpha)
+  }
   ConfX <- rep(NA, J-1) # confidence limits from Method 1, eqn (15)
   for (j in 1:(J-1)) ConfX[j]<- Fhat_X[j] + qnorm(1-talpha)*sqrt(SigmaXhat[j,j]/nX)
 
   # Simulate N normal vectors (for Y t-statistics)
-  chY <- t(chol(var_covY))
-  mvnY <- t(chY %*% matrix(rnorm(N*(J-1)), nrow=J-1, ncol=N))
-  Tmax <- apply(X=mvnY, MARGIN=1, FUN=max) # take maximum
-  rm(mvnY)  # free up memory from the big normal matrix
-  # Compute \tilde\beta from paper (1-\tilde\beta = pointwise coverage prob)
-  tbeta <- 1 - quantile(pnorm(Tmax), probs=sqrt(1-alpha), type=6)
+  if (J>2) {
+    chY <- t(chol(var_covY))
+    mvnY <- t(chY %*% matrix(rnorm(N*(J-1)), nrow=J-1, ncol=N))
+    Tmax <- apply(X=mvnY, MARGIN=1, FUN=max) # take maximum
+    rm(mvnY)  # free up memory from the big normal matrix
+    # Compute \tilde\beta from paper (1-\tilde\beta = pointwise coverage prob)
+    tbeta <- 1 - quantile(pnorm(Tmax), probs=sqrt(1-alpha), type=6)
+  } else {
+    tbeta <- 1 - sqrt(1-alpha)
+  }
   ConfY<- rep(NA,J-1) # confidence limits from Method 1, eqn (15)
   for (j in 1:(J-1)) ConfY[j]<- Fhat_Y[j] - qnorm(1-tbeta)*sqrt(SigmaYhat[j,j]/nY)
   
@@ -141,7 +167,7 @@ ordinal.latent.CS <- function(X, Y, alpha=0.1, N=1e4, ordinal.values,
     }
   }
   return(list(talpha=talpha, tbeta=tbeta, ordinal.values=VV, 
-              FXhat=Fhat_X, FYhat=Fhat_Y,
+              FXhat=FXhat, FYhat=FYhat,
               ConfX=ConfX, ConfY=ConfY, innerCSranges=innerCSranges))
 }
 # EOF
