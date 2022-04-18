@@ -1,7 +1,7 @@
-# Author: David M. Kaplan  https://kaplandm.github.io
+# Author: David M. Kaplan   kaplandm.github.io
 # Code to compute Bayesian posteriors in
 #   "Comparing Latent Inequality with Ordinal Data"
-#   by David M. Kaplan and Longhao Zhuo
+#   by David M. Kaplan, Wei Zhao, and Longhao Zhuo
 # Computes posteriors for certain relationships
 # between two population ordinal distributions,
 # assuming iid sampling of both (independent) samples.
