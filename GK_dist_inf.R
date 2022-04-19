@@ -1,6 +1,15 @@
-# Feedback: kaplandm@missouri.edu
+# Feedback: David M. Kaplan  kaplandm.github.io
+#
+# Better version: distcomp Stata command
+# https://kaplandm.github.io/#distcomp
+# Install within Stata with command
+#   net from https://kaplandm.github.io/stata
+# and follow instructions.
+#
+# Warning: for use with continuous distributions/data; may not work correctly with discrete X and/or Y.  (Stata distcomp is better.)
 #
 # Stata data: try package  readstata13  (now supports [at least] version 15...)
+# Or use "distcomp" Stata command
 #
 # Main (external) functions below: 
 #   GK.dist.inf : uniform confidence bands, hypothesis testing, p-values
