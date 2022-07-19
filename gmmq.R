@@ -47,7 +47,7 @@ gmmq <- function(tau, Y, X, Z.excl=NULL, dB,
   # if (!is.null(Z.excl) && !is.array(Z.excl)) Z.excl <- matrix(Z.excl,ncol=1)
   if (missing(dB)) dB <- dim(Y)[2]+dim(X)[2]-1 # for linear IVQR
   if (!is.numeric(dB)) stop("dB must be numeric (or left unspecified, in which case it defaults to dim(Y)[2]+dim(X)[2]-1 for linear IVQR)")
-  if (b.init!=0 && length(b.init)!=dB) stop(sprintf("Length of b.init must equal dB, which is %d", dB))
+  if (b.init[1]!=0 && length(b.init)!=dB) stop(sprintf("Length of b.init must equal dB, which is %d", dB))
   if (!is.function(Lambda)) stop('Lambda must be a function.')
   if (!is.null(Lambda.derivative) && !is.function(Lambda.derivative)) stop('Lambda.derivative must be a function (or NULL).')
   if (!is.array(Y) || !is.array(X) || (!is.null(Z.excl) && !is.array(Z.excl))) stop('Y, X, and Z.excl (if not NULL) must be arrays/matrices, so is.array(Y)=TRUE, etc. To make a vector into a column array, use e.g. matrix(Y,ncol=1)')
