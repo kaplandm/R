@@ -157,30 +157,40 @@ bid.CDF.band <- function(J, n, price, wins, conf.level, NREP=1e4, plot.type='1s'
   y.pts.up2 <- qbeta( qbeta(1-ALPHA.pt.2s,  1:J, J:1),  k, n+1-k)
   ret <- cbind(winning.bids=wins, UCB.lower.1s=y.pts.lo1, UCB.upper.1s=y.pts.up1,
                UCB.lower.2s=y.pts.lo2, UCB.upper.2s=y.pts.up2)
-  if (plot.type=='1s') {
-    plot.bid.CDF.band(band=ret, conf.level=conf.level, two.sided=FALSE)
-  } else if (plot.type=='2s') {
-    plot.bid.CDF.band(band=ret, conf.level=conf.level, two.sided=TRUE)
+  if (!is.null(plot.type) && !is.na(plot.type)) {
+    if (plot.type=='1s') {
+      plot.bid.CDF.band(band=ret, conf.level=conf.level, two.sided=FALSE)
+    } else if (plot.type=='2s') {
+      plot.bid.CDF.band(band=ret, conf.level=conf.level, two.sided=TRUE)
+    } else if (plot.type!='') warning("plot.type is neither '1s' nor '2s' so is ignored (no plot).")
   }
-  return(ret)
+  invisible(ret)
 }
 
 # Plot fn called above; feel free to customize
-# The lone argument 'band' is just the return value from bid.CDF.band
-# conf.level needs to be provided separately
+# The first argument 'band' is the return value from bid.CDF.band()
+# conf.level needs to be provided separately (e.g., 0.90 for 90% confidence level)
 # two.sided: FALSE for one-sided, TRUE for two-sided (slightly wider but usually pretty similar)
-plot.bid.CDF.band <- function(band, conf.level=NA, two.sided=FALSE) {
-  par(mar=c(5.1, 4.1, 6.1, 2.1))
-  tmpstr <- sprintf('%s uniform confidence band%s\n',
+# main: title for plot
+# plot.legend: include a legend? (TRUE/FALSE)
+# mar: margins argument for par()
+# ...: any other arguments to pass along to plot(), like xlim, yaxs, etc.
+plot.bid.CDF.band <- function(band, conf.level=NA, two.sided=FALSE, main=NULL, 
+                              plot.legend=TRUE, mar=c(5.1,4.1,6.1,2.1), ...) {
+  par(mar=mar)
+  if (is.null(main)) {
+    main <- sprintf('%s uniform confidence band%s\n',
                     ifelse(is.na(conf.level),'',sprintf('%g%%',100*conf.level)),
                     ifelse(two.sided,'','s'))
+  }
   wins <- band[,'winning.bids']
   y.pts.lo1 <- band[,'UCB.lower.1s']
   y.pts.lo2 <- band[,'UCB.lower.2s']
   y.pts.up1 <- band[,'UCB.upper.1s']
   y.pts.up2 <- band[,'UCB.upper.2s']
   plot(x=range(wins), y=range(y.pts.up1,y.pts.lo1,y.pts.up2,y.pts.lo2), type='n',
-       xlab="Bid value", ylab="Bid CDF", ylim=0:1, main=tmpstr)
+       xlab="Bid value", ylab="Bid CDF", ylim=0:1, main=main, yaxt='n', ...)
+  axis(side=2, at=0:4/4)
   bignum <- 100*(max(wins)-min(wins))
   if (two.sided) {
     lines(x=c(wins[1]-bignum,wins[1],wins,max(wins)+bignum), 
@@ -189,7 +199,7 @@ plot.bid.CDF.band <- function(band, conf.level=NA, two.sided=FALSE) {
     lines(x=c(wins[1]-bignum,wins,max(wins),max(wins)+bignum),
           y=c(min(y.pts.up2),y.pts.up2,1,1),
           type='S', lwd=2, lty=2, col=1)
-    legend('bottomright', legend='Two-sided', lty=2, lwd=2)
+    if (plot.legend) legend('bottomright', legend='Two-sided', lty=2, lwd=2)
   } else {
     lines(x=c(wins[1]-bignum,wins[1],wins,max(wins)+bignum),
           y=c(0,0,y.pts.lo1,max(y.pts.lo1)),
@@ -197,11 +207,13 @@ plot.bid.CDF.band <- function(band, conf.level=NA, two.sided=FALSE) {
     lines(x=c(wins[1]-bignum,wins,max(wins),max(wins)+bignum),
           y=c(min(y.pts.up1),y.pts.up1,1,1),
           type='S', lwd=2, lty=2, col=1)
-    tmp <- legend('top', plot=FALSE, lty=2, lwd=2, ncol=2,
-                  legend=c('Lower 1-sided','Upper 1-sided'))
-    newxy <- c(tmp$rect$left, tmp$rect$top + 1.01*tmp$rect$h)
-    legend(x=newxy[1], y=newxy[2], legend=c('Lower 1-sided','Upper 1-sided'),
-           lty=2, lwd=2, ncol=2, xpd=NA)
+    if (plot.legend) {
+      tmp <- legend('top', plot=FALSE, lty=2, lwd=2, ncol=2,
+                    legend=c('Lower 1-sided','Upper 1-sided'))
+      newxy <- c(tmp$rect$left, tmp$rect$top + 1.01*tmp$rect$h)
+      legend(x=newxy[1], y=newxy[2], legend=c('Lower 1-sided','Upper 1-sided'),
+             lty=2, lwd=2, ncol=2, xpd=NA)
+    }
   }
 }
 
