@@ -1,5 +1,5 @@
 # Computes inner CS for latent quantile differences given ordinal data
-# Paper: "Comparing latent inequality with ordinal data" (Kaplan, Zhao, Zhuo)
+# Paper: "Comparing latent inequality with ordinal data" (Kaplan and Zhao)
 # Original author: Wei Zhao
 # Updates: David M. Kaplan   kaplandm.github.io
 
@@ -54,15 +54,8 @@ ordinal.latent.CS <- function(X, Y, alpha=0.1, N=1e4, ordinal.values,
   if (is.null(VV)) {
     uX <- sort(unique(X))
     uY <- sort(unique(Y))
-    VV <- sort(unique(c(min(X,Y), intersect(unique(Y), unique(X)), max(X,Y))))
-    # tmp <- which(uX==min(VV))
-    # if (tmp>1) VV <- c(uX[tmp-1], VV)
-    # tmp <- which(uY==min(VV))
-    # if (tmp>1) VV <- c(uY[tmp-1], VV)
-    # tmp <- which(uX==max(VV))
-    # if (tmp<length(uX)) VV <- c(VV, uX[tmp+1])
-    # tmp <- which(uY==max(VV))
-    # if (tmp<length(uY)) VV <- c(VV, uY[tmp+1])
+    # VV <- sort(unique(c(min(X,Y), intersect(unique(Y), unique(X)), max(X,Y))))
+    VV <- sort(unique(c(uX,uY)))
   }
   
   # J=number of categories, labeled 1,2,...,J
@@ -83,11 +76,14 @@ ordinal.latent.CS <- function(X, Y, alpha=0.1, N=1e4, ordinal.values,
     Fhat_Y <- FYhat
   } else {
     nX <- length(X) # sample size
-    nY<- length(Y) # sample size
+    nY <- length(Y) # sample size
     if (missing(weightX)) {
       Fhat_X <- ecdf(X)(VV) # estimated CDF
     } else {
       weightsumX <- sum(weightX)
+      weightsumY <- sum(weightY)
+      nX <- (length(X)+length(Y))*(weightsumX/(weightsumX+weightsumY))
+      nY <- (length(X)+length(Y))*(weightsumY/(weightsumX+weightsumY))
       Fhat_X <- rep(NA, J)
       Fhat_X[J] <- 1
       for (j in 1:(J-1)) {
@@ -105,13 +101,60 @@ ordinal.latent.CS <- function(X, Y, alpha=0.1, N=1e4, ordinal.values,
       }
     }
   }
- 
+  
+  # Estimated quantile ranges
+  est.ranges <- NULL
+  for (j in 1:(length(Fhat_X)-1)) {
+    if (Fhat_X[j]<Fhat_Y[j]) {
+      if (!is.null(est.ranges)) {
+        if (Fhat_X[j]<est.ranges[nrow(est.ranges),2]) {
+          est.ranges[nrow(est.ranges),2] <- Fhat_Y[j]
+        } else {
+          est.ranges <- rbind(est.ranges, c(Fhat_X[j], Fhat_Y[j]))
+        }
+      }
+      else {
+        est.ranges <- rbind(est.ranges, c(Fhat_X[j], Fhat_Y[j]))
+      }
+    }
+  }
+  
+  # Remove categories with zero observations (in one group or another)
+  pmfXhat <- Fhat_X - c(0,Fhat_X[1:(length(Fhat_X)-1)])
+  pmfYhat <- Fhat_Y - c(0,Fhat_Y[1:(length(Fhat_Y)-1)])
+  epmfs <- cbind(pmfYhat, pmfXhat)
+  ecdfsraw <- cbind(Fhat_Y, Fhat_X)
+  ecdfs <- NULL
+  for (i in 1:nrow(ecdfsraw)) {
+    if (epmfs[i,1]!=0) {  # otherwise, just skip
+      if (epmfs[i,2]!=0 || i==1) {
+        ecdfs <- rbind(ecdfs, ecdfsraw[i,])
+      } else {
+        if (epmfs[i-1,1]==0) {
+          ecdfs <- rbind(ecdfs, ecdfsraw[i,])
+        } else {
+          ecdfs[nrow(ecdfs),] <- ecdfsraw[i,]
+        }
+      }
+    }
+  }
+  if (ecdfs[nrow(ecdfs),1]<(1-10*.Machine$double.eps) || 
+      ecdfs[nrow(ecdfs),2]<(1-10*.Machine$double.eps)) {
+    ecdfs <- rbind(ecdfs, c(1,1))
+  }
+  Fhat_X <- ecdfs[,2]
+  Fhat_Y <- ecdfs[,1]
+  J <- length(Fhat_X)
+
   # To be a little conservative: replace 0 with 1/n, replace 1 with 1-1/n
   FXhat <- Fhat_X;  FYhat <- Fhat_Y  # save actual estimates
-  Fhat_X[Fhat_X==0] <- 1/nX
-  Fhat_Y[Fhat_Y==0] <- 1/nY
-  Fhat_X[Fhat_X==1] <- (1-1/nX)
-  Fhat_Y[Fhat_Y==1] <- (1-1/nY)
+  tmp <- max(Fhat_X[1], Fhat_Y[1])
+  Fhat_X[Fhat_X==0] <- min(1/nX, tmp)
+  Fhat_Y[Fhat_Y==0] <- min(1/nY, tmp)
+  tmp <- min(Fhat_X[length(Fhat_X)-1], Fhat_Y[length(Fhat_Y)-1])
+  if (tmp==1) tmp <- 1 - 1/max(nX,nY)
+  Fhat_X[Fhat_X==1] <- 1 - min(1-tmp, 1/nX)
+  Fhat_Y[Fhat_Y==1] <- 1 - min(1-tmp, 1/nY)
   
   # Estimate the covariance matrices
   SigmaXhat <- SigmaYhat <- matrix(data=NA, nrow=J-1, ncol=J-1)
@@ -157,7 +200,7 @@ ordinal.latent.CS <- function(X, Y, alpha=0.1, N=1e4, ordinal.values,
     tbeta <- 1 - sqrt(1-alpha)
   }
   ConfY<- rep(NA,J-1) # confidence limits from Method 1, eqn (15)
-  for (j in 1:(J-1)) ConfY[j]<- Fhat_Y[j] - qnorm(1-tbeta)*sqrt(SigmaYhat[j,j]/nY)
+  for (j in 1:(J-1)) ConfY[j] <- Fhat_Y[j] - qnorm(1-tbeta)*sqrt(SigmaYhat[j,j]/nY)
   
   # Aggregate quantile index intervals into overall inner confidence set
   innerCSranges <- NULL
@@ -168,6 +211,7 @@ ordinal.latent.CS <- function(X, Y, alpha=0.1, N=1e4, ordinal.values,
   }
   return(list(talpha=talpha, tbeta=tbeta, ordinal.values=VV, 
               FXhat=FXhat, FYhat=FYhat,
-              ConfX=ConfX, ConfY=ConfY, innerCSranges=innerCSranges))
+              ConfX=ConfX, ConfY=ConfY, innerCSranges=innerCSranges,
+              est.ranges=est.ranges))
 }
 # EOF
