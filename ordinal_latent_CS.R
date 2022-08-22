@@ -82,8 +82,9 @@ ordinal.latent.CS <- function(X, Y, alpha=0.1, N=1e4, ordinal.values,
     } else {
       weightsumX <- sum(weightX)
       weightsumY <- sum(weightY)
-      nX <- (length(X)+length(Y))*(weightsumX/(weightsumX+weightsumY))
-      nY <- (length(X)+length(Y))*(weightsumY/(weightsumX+weightsumY))
+      # Use unweighted counts for subsample sizes, not weighted counts
+      # nX <- (length(X)+length(Y))*(weightsumX/(weightsumX+weightsumY))
+      # nY <- (length(X)+length(Y))*(weightsumY/(weightsumX+weightsumY))
       Fhat_X <- rep(NA, J)
       Fhat_X[J] <- 1
       for (j in 1:(J-1)) {
