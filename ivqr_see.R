@@ -68,7 +68,7 @@ ivqr.see <- function(tau, Y, D=NULL, X.exog=NULL, Z.excl=NULL, h, b.init=NULL, i
         tmp <- coef(rq(Y~D+X.exog))
       }
       b.init <- tmp[c(2:length(tmp),1)]
-      if (!is.numeric(b.init) || is.nan(b.init) || is.infinite(b.init) || length(b.init)<1) b.init <- 0
+      if (!is.numeric(b.init) || any(is.nan(b.init)) || any(is.infinite(b.init)) || length(b.init)<1) b.init <- 0
     } else {
       b.init <- 0
     }
