@@ -1,7 +1,7 @@
 # "Smoothed GMM for quantile models" by de Castro, Galvao, Kaplan, and Liu
 # (Journal of Econometrics, forthcoming)
 # This code covers exact identification; see also ivqr_gmm.R
-# Questions? Comments? email Dave: kaplandm@missouri.edu
+# Questions? Comments?  contact Dave  (https://kaplandm.github.io)
 
 # pracma::newtonsys used for solving sample moment conditions (Z-estimator)
 if (!require(pracma)) stop('Please install (from CRAN) the R package pracma to run this code: install.packages("pracma")')
@@ -21,7 +21,7 @@ if (!require(pracma)) stop('Please install (from CRAN) the R package pracma to r
 # h: initial smoothing bandwidth to try.  If h=0 (default), then the code tries to find the smallest possible bandwidth.
 # VERBOSE: output update messages each iteration of the search over h
 # RETURN.Z: if TRUE then also return the used instrument matrix Z; may be useful for subsequently calling gmmq.wald.test(), but otherwise set to FALSE
-# b.init: starting value for the vector beta in the numerical search.  
+# b.init: starting value for the vector beta in the numerical search.
 # 
 # Return value: list with estimate of the b parameter vector and actual h used (and the instrument matrix Z, if RETURN.Z is TRUE)
 # 
@@ -33,23 +33,21 @@ Itilde.deriv.KS17 <- function(u) { ifelse(u > -1 & u < 1, (105/64)*(1-5*u^2+7*u^
 gmmq <- function(tau, Y, X, Z.excl=NULL, dB, 
                  Lambda=function(y,x,b) y[,1]-cbind(y[,-1],x)%*%b, 
                  Lambda.derivative=function(y,x,b) -cbind(y[,-1],x), 
-                 h=0, VERBOSE=FALSE, RETURN.Z=FALSE, b.init=0) {
+                 h=0, VERBOSE=FALSE, RETURN.Z=FALSE, b.init=0, iidSE=FALSE) {
   # pracma::newtonsys used for solving sample moment conditions (Z-estimator)
   if (!require(pracma)) stop('Please install (from CRAN) the R package pracma to run this code.')
   
   # Check arguments: errors, warnings, defaults
   if (missing(tau) || missing(Y) || missing(X)) stop('Must supply tau (scalar), dB (scalar), Y (matrix), X (matrix)')
-  # if (!is.numeric(tau) || !is.numeric(Y) || !is.numeric(X) || (!is.null(Z.excl) && !is.numeric(Z.excl)) || !is.numeric(h)) {
   if (!is.numeric(tau) || !is.numeric(h)) stop('Arguments tau and h must be numeric.')
   Y <- as.matrix(Y);  X <- as.matrix(X)
-  # if (!is.array(Y)) Y <- matrix(Y,ncol=1)
   if (!is.null(Z.excl)) Z.excl <- as.matrix(Z.excl)
-  # if (!is.null(Z.excl) && !is.array(Z.excl)) Z.excl <- matrix(Z.excl,ncol=1)
   if (missing(dB)) dB <- dim(Y)[2]+dim(X)[2]-1 # for linear IVQR
   if (!is.numeric(dB)) stop("dB must be numeric (or left unspecified, in which case it defaults to dim(Y)[2]+dim(X)[2]-1 for linear IVQR)")
   if (b.init[1]!=0 && length(b.init)!=dB) stop(sprintf("Length of b.init must equal dB, which is %d", dB))
   if (!is.function(Lambda)) stop('Lambda must be a function.')
   if (!is.null(Lambda.derivative) && !is.function(Lambda.derivative)) stop('Lambda.derivative must be a function (or NULL).')
+  if (iidSE && is.null(Lambda.derivative)) stop('Must set iidSE=FALSE if Lambda.derivative=NULL')
   if (!is.array(Y) || !is.array(X) || (!is.null(Z.excl) && !is.array(Z.excl))) stop('Y, X, and Z.excl (if not NULL) must be arrays/matrices, so is.array(Y)=TRUE, etc. To make a vector into a column array, use e.g. matrix(Y,ncol=1)')
   if (length(tau)!=1 || length(dB)!=1 || length(h)!=1) stop('tau, dB, and h must all be scalars: length(dB)==1, etc.')
   dY <- dim(Y)[2]
@@ -72,7 +70,6 @@ gmmq <- function(tau, Y, X, Z.excl=NULL, dB,
   #
   if (dB>dim(Z)[2]) stop('Parameters not identified: must have dB<=dim(X)[2]+dim(Z.excl)[2]') else if (dB<dim(Z)[2]) { #overidentified
     if (dB==dim(Y)[2]+dim(X)[2]-1) { # for consistency with IVQR-SEE
-      # Z <- Z %*% solve(t(Z)%*%Z) %*% t(Z) %*% cbind(Y[,-1],X)
       tmp1 <- lm(Y[,-1]~Z) #could Z+0 but just in case Z excludes intercept...
       tmp2 <- lm(X~Z)
       Z <- cbind(predict(tmp1),predict(tmp2))
@@ -89,21 +86,14 @@ gmmq <- function(tau, Y, X, Z.excl=NULL, dB,
   Itilde.deriv <- Itilde.deriv.KS17
 
   # For solver (to find solution to estimating equations)
-  # YX <- cbind(Y,X)
   obj.fn <- function(b,h) { #objective function
-    # L <- matrix(apply(cbind(Y,X),1,function(YXobs)Lambda(YXobs[1:dY],YXobs[-(1:dY)],b)), ncol=1)
-    # L <- matrix(Lambda(y=Y,x=X,b=b), ncol=1)
     L <- Lambda(y=Y,x=X,b=b)
     return(colMeans(Z*array(data=Itilde(-L/h)-tau,dim=dim(Z))))
   }
   if (!is.null(Lambda.derivative)) {
     jac.fn <- function(b,h) { #Jacobian function
-      # L <- matrix(apply(cbind(Y,X),1,function(YXobs)Lambda(YXobs[1:dY],YXobs[-(1:dY)],b)), ncol=1)
-      # L <- matrix(Lambda(y=Y,x=X,b=b), ncol=1)
       L <- Lambda(y=Y,x=X,b=b)
-      # Lp <- t(apply(YX,1,function(YXobs)Lambda.derivative(YXobs[1:dY],YXobs[-(1:dY)],b)))
       Lp <- Lambda.derivative(y=Y,x=X,b=b)
-      # if (VERBOSE) cat(sprintf("dim(L)=%s;dim(Lp)=%s;dB=%d\n",paste0(sprintf("%d",dim(L)),collapse="-by-"),paste0(sprintf("%d",dim(Lp)),collapse="-by-"),dB))
       return((t(Z) %*% (Lp*array(data=Itilde.deriv(-L/h),dim=dim(Z))*(-1/h)))/n)
     }
   }
@@ -152,18 +142,25 @@ gmmq <- function(tau, Y, X, Z.excl=NULL, dB,
   	  } else if (h.hi/h.init>2.5 || h==0) { 
   	    h.cur <- (h.lo+h.hi)*(2/3)
   	  } else h.cur <- h.init
-#   	  } else if (h.lo==0 || h.lo==h) { #maybe with better x0 in newtonsys, a solution can be found
-#   		  h.cur <- h.init
-#   		} else { #try geometric mean of h.lo and h.hi
-#   		  h.cur <- sqrt(h.lo*h.hi)
-#   		}
   	} 
   }
   if (h.cur>H.MAX) {
     warning("(above) error from pracma::newtonsys")
     stop(last.error)
   }
-  if (RETURN.Z) return(list(b=b.best,h=h.hi,Z=Z)) else return(list(b=b.best,h=h.hi))
+  if (iidSE) {
+    L <- Lambda(y=Y, x=X, b=b.best)
+    h.SE <- bw.nrd(L)
+    J.hat <- jac.fn(b=b.best, h=h.SE)
+    S.hat <- tau*(1-tau)* t(Z) %*% Z / n
+    S.hat.inv <- solve(S.hat)
+    cov.hat <- solve(t(J.hat) %*% S.hat.inv %*% J.hat) / n
+  }
+  # 
+  ret <- list(b=b.best, h=h.hi)
+  if (RETURN.Z) ret$Z <- Z
+  if (iidSE) ret$se <- sqrt(diag(cov.hat))
+  return(ret)
 }
 
 
@@ -254,7 +251,6 @@ gmmq.BS.test <- function(a.fn,A.fn,tau,Y,X,Z,Z.excl,Lambda,Lambda.derivative,bet
     } else stop(sprintf("Argument 'structure' to function gmmq.BS.test() must be 'iid' or 'ts' or 'cluster'"))
     Ystar <- matrix(Y[indstars,],ncol=ncol(Y))
     Xstar <- matrix(X[indstars,],ncol=ncol(X))
-    # Zstar <- matrix(Z[indstars,],ncol=ncol(Z))
     Zexclstar <- matrix(Z.excl[indstars,],ncol=ncol(Z.excl))
     # 
     retstar <- suppressWarnings(tryCatch(gmmq(tau=tau,Y=Ystar,X=Xstar,Z.excl=Zexclstar,dB=length(beta.hat),
@@ -324,7 +320,6 @@ gmmq.BS2.test <- function(T.fn,tau,Y,X,Z,Z.excl,Lambda,Lambda.derivative,beta.ha
     } else stop(sprintf("Argument 'structure' to function gmmq.BS.test() must be 'iid' or 'ts' or 'cluster'"))
     Ystar <- matrix(Y[indstars,],ncol=ncol(Y))
     Xstar <- matrix(X[indstars,],ncol=ncol(X))
-    # Zstar <- matrix(Z[indstars,],ncol=ncol(Z))
     Zexclstar <- matrix(Z.excl[indstars,],ncol=ncol(Z.excl))
     # 
     retstar <- suppressWarnings(tryCatch(gmmq(tau=tau,Y=Ystar,X=Xstar,Z.excl=Zexclstar,dB=length(beta.hat),
@@ -346,7 +341,6 @@ gmmq.BS2.test <- function(T.fn,tau,Y,X,Z,Z.excl,Lambda,Lambda.derivative,beta.ha
 # Estimate asymptotic covariance matrix
 # h.adj: should be strictly between 0 and 1/2 if "h=0" (smallest possible bandwidth) was used for estimation, to adjust h to better estimate G; if h.adj=1, then same h is used for G and Sigma estimation (i.e., the value passed in argument h).
 cov.est.fn <- function(tau,Y,X,Z,Lambda,Lambda.derivative,beta.hat,Itilde,Itilde.deriv,h,structure=c('iid','ts','cluster'),cluster.X.col,LRV.kernel=c('QS','Bartlett','uniform'),LRV.ST=NA,VERBOSE=FALSE,h.adj=1) {
-  # if (missing(structure) || !is.character(structure)) stop("Argument structure must be 'iid' or 'ts' or 'cluster'")
   structure <- match.arg(structure)
   LRV.kernel <- match.arg(LRV.kernel)
   G.hat <- G.est.fn(Y=Y,X=X,Z=Z,Lambda=Lambda,Lambda.derivative=Lambda.derivative,beta.hat=beta.hat,Itilde.deriv=Itilde.deriv,h=h^h.adj,VERBOSE=VERBOSE)
@@ -368,12 +362,6 @@ G.est.fn <- function(Y,X,Z,Lambda,Lambda.derivative,beta.hat,Itilde.deriv,h,VERB
   n <- dim(Z)[1]
   L <- Lambda(Y,X,beta.hat)
   Ld <- Lambda.derivative(Y,X,beta.hat)
-  # tmpsum <- array(0,dim=c(dim(Z)[2],length(beta.hat)))
-  # for (i in 1:n) {
-  #   tmp <- Itilde.deriv(-L[i]/h) *
-  #     matrix(Z[i,],ncol=1) %*% matrix(Ld[i,], nrow=1)
-  #   tmpsum <- tmpsum + tmp
-  # }
   tmpsum2 <- t(array(data=Itilde.deriv(-L/h),dim=dim(Z)) * Z) %*% Ld
   return(-tmpsum2/(n*h))
 }
@@ -399,7 +387,6 @@ alpha2.fn <- function(rhos,sigmas,ws=1) sum(ws*4*rhos^2*sigmas^4/(1-rhos)^8) / s
 alpha1.fn <- function(rhos,sigmas,ws=1) sum(ws*4*rhos^2*sigmas^4/((1-rhos)^6*(1+rhos)^2)) / sum(ws*sigmas^4/(1-rhos)^4)
 # 
 LRV.est.fn <- function(tau,Y,X,Z,Lambda,beta.hat,Itilde,h,structure=c('iid','ts','cluster'),cluster.X.col,LRV.kernel=c('QS','Bartlett','uniform'),LRV.ST=NA,VERBOSE=FALSE) {
-  # if (missing(structure) || !is.character(structure)) stop("Argument structure must be 'iid' or 'ts' or 'cluster'")
   structure <- match.arg(structure)
   LRV.kernel <- match.arg(LRV.kernel)
   n <- dim(Z)[1]
@@ -423,7 +410,6 @@ LRV.est.fn <- function(tau,Y,X,Z,Lambda,beta.hat,Itilde,h,structure=c('iid','ts'
         warning(sprintf("AR method from Andrews (1991) for selecting S_T returned NA or NaN values; using S_T=%g",LRV.ST))
       } else if (LRV.kernel=='uniform') {
         LRV.ST <- uniform.ST.fn(alpha2=alpha2.fn(rhos=rho.hats,sigmas=sigma.hats),n=n)
-        # stop("Need to provide a number for LRV.ST if LRV.kernel is 'uniform'")
       } else if (LRV.kernel=='Bartlett') {
         LRV.ST <- Bartlett.ST.fn(alpha1=alpha1.fn(rhos=rho.hats,sigmas=sigma.hats),n)
       } else if (LRV.kernel=='QS') {
