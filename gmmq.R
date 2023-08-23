@@ -1,5 +1,5 @@
 # "Smoothed GMM for quantile models" by de Castro, Galvao, Kaplan, and Liu
-# Journal of Econometrics, 2021: https://doi.org/10.1016/j.jeconom.2019.04.008
+# Journal of Econometrics, 2019: https://doi.org/10.1016/j.jeconom.2019.04.008
 # This code covers exact identification; see also ivqr_gmm.R
 # Questions? Comments?  contact Dave (https://kaplandm.github.io)
 
