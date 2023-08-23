@@ -1,7 +1,7 @@
 # "Smoothed GMM for quantile models" by de Castro, Galvao, Kaplan, and Liu
-# (Journal of Econometrics, forthcoming)
+# Journal of Econometrics, 2021: https://doi.org/10.1016/j.jeconom.2019.04.008
 # This code covers exact identification; see also ivqr_gmm.R
-# Questions? Comments?  contact Dave  (https://kaplandm.github.io)
+# Questions? Comments?  contact Dave (https://kaplandm.github.io)
 
 # pracma::newtonsys used for solving sample moment conditions (Z-estimator)
 if (!require(pracma)) stop('Please install (from CRAN) the R package pracma to run this code: install.packages("pracma")')
