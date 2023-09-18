@@ -1,104 +1,119 @@
 # Functions for finite-sample inference on bid distributions from auction data
 #  - confidence interval for specific quantile
 #  - uniform confidence band for CDF
-# Original: Ronald D. Flores (2020-2022)
-# Updates: David M. Kaplan (July 2022)
-# Feedback/support: https://kaplandm.github.io/ has my contact info
+# Original draft: Ronald D. Flores
+# Current code: David M. Kaplan & Xin Liu
+# Feedback/support: https://kaplandm.github.io/
+
+
+prob.loaded <- (exists("GK.dist.1s.alpha.tilde") && exists("quantile.inf"))
+success <-
+  tryCatch({source('https://raw.githubusercontent.com/kaplandm/R/main/GK_dist_inf.R');
+    source('https://raw.githubusercontent.com/kaplandm/R/main/quantile_inf.R');
+    TRUE},  error=function(w) FALSE)
+if (!success) {
+  success <-
+    tryCatch({source("GK_dist_inf.R");source("quantile_inf.R");TRUE},
+             error=function(w) FALSE)
+  if (!success) {
+    if (prob.loaded) {
+      warning("Couldn't load GK_dist_inf.R and/or quantile_inf.R, but it seems like you already did, so continuing on.")
+    } else {
+      stop("Failed to source() GK_dist_inf.R and/or quantile_inf.R from web or local file.  You may download and source() it yourself, or at least make sure it's in your getwd().  Files currently available at https://github.com/kaplandm/R")
+    }
+  }
+}
 
 
 # Arguments for quantile confidence interval (CI)
-  # J:       number of auctions
-  # n:       number of bidders per auction
-  # price:   1 if first-price auction (or effectively so, like descending/Dutch)
-  #          2 if second-price (or effectively so, like ascending/English)
-  #          3 if third-price, etc.
-  # wins:    vector of winning bids from J auctions
-  # conf.level: confidence level as decimal; e.g., 0.90 for 90% CI
-  # tau:     quantile index of interest; e.g., 0.5 for median (of bid distribution)
+# wins:    vector of winning bids, one from each auction
+# price:   1 if first-price auction (or effectively so, like descending/Dutch)
+#          2 if second-price (or effectively so, like ascending/English)
+#          3 if third-price, etc.
+# n:       number of bidders per auction (scalar, or if differs by auction then vector with same length as "wins")
+# conf.level: confidence level as decimal; e.g., 0.90 for 90% CI
+# tau:     quantile index of interest; e.g., 0.5 for median (of bid distribution)
 
 # Return value:
-  # matrix with rows for exact and conservative CIs, lower/upper/two-sided,
-  # with associated coverage probabilities. 
+# matrix with lower/upper/two-sided CIs for tau-quantile of bid distribution
 
-bid.quantile.CI <- function(J, n, price, wins, conf.level, tau) {
+bid.quantile.CI <- function(wins, price, n, conf.level, tau, NREP=1e3) {
   # Process arguments
-  k <- n + 1 - price  #order statistic index of winning bid
   ALPHA <- 1 - conf.level
-  wins <- sort(wins) #so wins[k] is the k'th order statistic
-
-  # Solve for fractional order statistic indices r; 1=one-sided, 2=two-sided; lo=lower endpoint; up=upper endpoint
-  r.lo1 <- tryCatch(expr=uniroot(function(x){pbeta(pbeta(tau, k, n+1-k), x, J+1-x) - (1-ALPHA)  }, interval=c(1, J))$root,
-                    error=function(w)NA)
-  r.lo2 <- tryCatch(uniroot(function(x){pbeta(pbeta(tau, k, n+1-k), x, J+1-x) - (1-ALPHA/2)}, interval=c(1, J))$root,
-                    error=function(w)NA)
-  r.up1 <- tryCatch(uniroot(function(x){pbeta(pbeta(tau, k, n+1-k), x, J+1-x) -    ALPHA   }, interval=c(1, J))$root,
-                    error=function(w)NA)
-  r.up2 <- tryCatch(uniroot(function(x){pbeta(pbeta(tau, k, n+1-k), x, J+1-x) -    ALPHA/2 }, interval=c(1, J))$root,
-                    error=function(w)NA)
+  wins <- sort(wins) # so wins[K] is the Kth order statistic
+  if (!is.numeric(n) || !is.numeric(price) || !is.numeric(wins) || !is.numeric(conf.level) || !is.numeric(tau) || !is.numeric(NREP)) stop("All arguments must be numeric")
+  J <- length(wins)
+  if (length(n)>1 && length(n)!=J) stop("Argument n must be scalar or else vector with length J")
+  if (tau<=0 || tau>=1) stop("Argument tau must satisfy 0<tau<1, like tau=0.5 for the median")
+  if (conf.level<=0 || conf.level>=1) stop("Argument conf.level must satisfy 0<conf.level<1, like conf.level=0.90 for 90% confidence level")
 
   # Set up confidence interval matrix
-  CIs <- matrix(data=NA, nrow=6, ncol=2,
-                dimnames=list(c('Exact lower CI','Conservative lower CI',
-                                'Exact upper CI','Conservative upper CI',
-                                'Exact two-sided CI','Conservative two-sided CI'),
+  CIs <- matrix(data=NA, nrow=3, ncol=2,
+                dimnames=list(c('Near-exact lower CI','Near-exact upper CI',
+                                'Near-exact two-sided CI'),
                               c('Lower','Upper')))
-  CIs[1:2,1] <- -Inf
-  CIs[3:4,2] <- +Inf
+  CIs[1,1] <- -Inf
+  CIs[2,2] <- +Inf
 
-  # Given indices, compute corresponding fractional order statistics from data,
-  #   as well as certain fundamental probabilities used to compute coverage probabilities,
-  #   and compute confidence intervals
-  pr.tmp <- pbeta(pbeta(tau, k, n+1-k), 1:J, J:1)
-  pr.r.up1.frac <- pr.r.up1.ceil <- pr.r.lo1.frac <- pr.r.lo1.floor <- 
-    pr.r.up2.frac <- pr.r.lo2.frac <- pr.r.up2.ceil <- pr.r.lo2.floor <- NA
-  if (!is.na(r.lo1)) { #one-sided lower endpoint (for upper CI)
-    win.r.lo1.floor <- wins[floor(r.lo1)]
-    win.r.lo1.ceil  <- wins[ceiling(r.lo1)]
-    win.r.lo1.frac  <- win.r.lo1.floor + (r.lo1 - floor(r.lo1))*(win.r.lo1.ceil - win.r.lo1.floor)
-    pr.r.lo1.floor <- pr.tmp[floor(r.lo1)]
-    pr.r.lo1.frac  <- pbeta(pbeta(tau, k, n+1-k), r.lo1, J+1-r.lo1)
-    CIs[3,1] <- win.r.lo1.frac
-    CIs[4,1] <- win.r.lo1.floor
+  if (length(n)==1) { # Use Goldman and Kaplan (2017)
+    k <- n + 1 - price  #order statistic index of winning bid
+    CIs[1,2] <- quantile.inf(X=wins, p=pbeta(tau, k, n+1-k), ALPHA=ALPHA, ONESIDED=-1)$CI$hi
+    CIs[2,1] <- quantile.inf(X=wins, p=pbeta(tau, k, n+1-k), ALPHA=ALPHA, ONESIDED= 1)$CI$lo
+    CIs[3, ] <- unlist(quantile.inf(X=wins, p=pbeta(tau, k, n+1-k), ALPHA=ALPHA, ONESIDED= 0)$CI)
+  } else { # Simulate inid Beta rv's
+    rownames(CIs) <- c('Exact (simulated) conservative lower CI',
+                       'Exact (simulated) conservative upper CI',
+                       'Exact (simulated) conservative two-sided CI')
+    # Save/set RNG seed
+    oldseed <- NULL
+    if (exists(".Random.seed",.GlobalEnv)) {  #.Random.seed #restore state at end
+      oldseed <- get(".Random.seed",.GlobalEnv)
+    }
+    on.exit(if (!is.null(oldseed)) { assign(".Random.seed", oldseed, .GlobalEnv) }, add=TRUE)
+    set.seed(112358)
+    # Simulate inid beta order statistics
+    beta.sims <- NULL
+    for (j in 1:J) {
+      beta.sims <- cbind(beta.sims, rbeta(n=NREP, shape1=n[j]+1-price, shape2=price))
+    }
+    beta.sims <- t(apply(X=beta.sims, MARGIN=1, FUN=sort))
+    # Compute probabilities and choose order statistics accordingly (erring on conservative)
+    beta.lt.probs <- apply(X=beta.sims, MARGIN=2, FUN=function(col)mean(col<=tau))
+    beta.gt.probs <- apply(X=beta.sims, MARGIN=2, FUN=function(col)mean(col>=tau))
+    r <- suppressWarnings(min(which(beta.gt.probs>=conf.level)))
+    CIs[1,2] <- ifelse(r<Inf, wins[r], Inf)
+    r <- suppressWarnings(max(which(beta.lt.probs>=conf.level)))
+    CIs[2,1] <- ifelse(r>-Inf, wins[r], -Inf)
+    if (CIs[1,2]<Inf && CIs[2,1]>-Inf) {
+      r1a <- max(which(beta.lt.probs>=1-ALPHA/2))
+      beta1a <- beta.sims[,r1a]
+      beta.2a.probs <- apply(X=beta.sims[,-(1:r1a)], MARGIN=2, FUN=function(col)mean(beta1a<=tau & col>=tau))
+      r2a <- r1a + min(which(beta.2a.probs>=conf.level))
+      r2b <- min(which(beta.gt.probs>=1-ALPHA/2))
+      beta2b <- beta.sims[,r2b]
+      beta.2b.probs <- apply(X=beta.sims[,1:(r2b-1)], MARGIN=2, FUN=function(col)mean(beta2b>=tau & col<=tau))
+      r1b <- max(which(beta.2b.probs>=conf.level))
+      if (r1a>-Inf && r1b<Inf) {
+        if (r2a>-Inf && r2b<Inf) {
+          if (r2a-r1a < r2b-r1b) {
+            CIs[3,] <- c(wins[r1a], wins[r2a])
+          } else {
+            CIs[3,] <- c(wins[r1b], wins[r2b])
+          }
+        } else {
+          CIs[3,1] <- ifelse(r1a>-Inf, wins[r1a], -Inf)
+          CIs[3,2] <- ifelse(r2a< Inf, wins[r2a],  Inf)
+        }
+      } else {
+        CIs[3,1] <- ifelse(r1b>-Inf, wins[r1b], -Inf)
+        CIs[3,2] <- ifelse(r2b< Inf, wins[r2b],  Inf)
+      }
+    } else {
+      CIs[3,] <- c(-Inf,Inf)
+    }
   }
-  if (!is.na(r.lo2)) { #two-sided lower endpoint
-    win.r.lo2.floor <- wins[floor(r.lo2)]
-    win.r.lo2.ceil  <- wins[ceiling(r.lo2)]
-    win.r.lo2.frac  <- win.r.lo2.floor + (r.lo2 - floor(r.lo2))*(win.r.lo2.ceil - win.r.lo2.floor)
-    pr.r.lo2.floor <- pr.tmp[floor(r.lo2)]
-    pr.r.lo2.frac  <- pbeta(pbeta(tau, k, n+1-k), r.lo2, J+1-r.lo2)
-    CIs[5,1] <- win.r.lo2.frac
-    CIs[6,1] <- win.r.lo2.floor
-  }
-  if (!is.na(r.up1)) { #one-sided upper endpoint (for lower CI)
-    win.r.up1.floor <- wins[floor(r.up1)]
-    win.r.up1.ceil  <- wins[ceiling(r.up1)]
-    win.r.up1.frac  <- win.r.up1.floor + (r.up1 - floor(r.up1))*(win.r.up1.ceil - win.r.up1.floor)
-    pr.r.up1.ceil  <- pr.tmp[ceiling(r.up1)]
-    pr.r.up1.frac  <- pbeta(pbeta(tau, k, n+1-k), r.up1, J+1-r.up1)
-    CIs[1,2] <- win.r.up1.frac
-    CIs[2,2] <- win.r.up1.ceil
-  }
-  if (!is.na(r.up2)) { #two-sided upper endpoint
-    win.r.up2.floor <- wins[floor(r.up2)]
-    win.r.up2.ceil  <- wins[ceiling(r.up2)]
-    win.r.up2.frac  <- win.r.up2.floor + (r.up2 - floor(r.up2))*(win.r.up2.ceil - win.r.up2.floor)
-    pr.r.up2.ceil  <- pr.tmp[ceiling(r.up2)]
-    pr.r.up2.frac  <- pbeta(pbeta(tau, k, n+1-k), r.up2, J+1-r.up2)
-    CIs[5,2] <- win.r.up2.frac
-    CIs[6,2] <- win.r.up2.ceil
-  }
-
-  # Compute corresponding CP
-  CPs <- c(1 - pr.r.up1.frac, 1 - pr.r.up1.ceil, pr.r.lo1.frac, pr.r.lo1.floor,
-           pr.r.lo2.frac - pr.r.up2.frac, pr.r.lo2.floor - pr.r.up2.ceil)
-
-  # Return values
-  ret <- cbind(CIs,CP=CPs)
-  for (i in 1:nrow(ret)) {
-    if (any(is.na(ret[i,]))) ret[i,] <- NA
-  }
-  return(ret)
-}  
+  return(CIs)
+}
 
 
 # # Examples
@@ -106,65 +121,241 @@ bid.quantile.CI <- function(J, n, price, wins, conf.level, tau) {
 # J <- 100; n <- 10; price <- 2
 # fake.bids <- matrix(data=rnorm(J*n, mean=100, sd=10), nrow=J)
 # fake.wins <- apply(X=fake.bids, MARGIN=1, FUN=function(x) sort(x=x, decreasing=TRUE)[price])
-# bid.quantile.CI(J=J, n=n, price=price, wins=fake.wins, conf.level=0.90, tau=0.75)
-# bid.quantile.CI(J=J, n=n, price=price, wins=fake.wins, conf.level=0.90, tau=0.75)[3,] #select one single type of CI
-# bid.quantile.CI(J=J, n=n, price=price, wins=fake.wins, conf.level=0.90, tau=0.50) #not enough data for lower endpoints for median, but can still get upper endpoints
-
+# bid.quantile.CI(wins=fake.wins, price=price, n=n, conf.level=0.90, tau=0.75)
+# bid.quantile.CI(wins=fake.wins, price=price, n=n, conf.level=0.90, tau=0.75)[3,] #select one single type of CI
+# bid.quantile.CI(wins=fake.wins, price=price, n=n, conf.level=0.90, tau=0.50) #not enough data for lower endpoints for median, but can still get upper endpoints
+# bid.quantile.CI(wins=fake.wins, price=price, n=rep(10,J), conf.level=0.90, tau=0.75) #vector n, but all n=10
+# bid.quantile.CI(wins=fake.wins, price=price, n=sample(x=9:11,size=J,replace=T), conf.level=0.90, tau=0.75) #vector n, varying n[j]
+# #
+# (st <- Sys.time())
+# set.seed(112358)
+# NREP <- 1000
+# J1 <- J2 <- 20
+# n1 <- 4;  n2 <- 10
+# price <- 2
+# ALPHA <- 0.1
+# FB <- punif;  QB <- qunif
+# TAU <- 0.75
+# covers <- NULL
+# for (irep in 1:NREP) {
+#   fake.bids1 <- matrix(data=runif(J1*n1), nrow=J1)
+#   fake.wins1 <- apply(X=fake.bids1, MARGIN=1, FUN=function(x) sort(x=x, decreasing=TRUE)[price])
+#   fake.bids2 <- matrix(data=runif(J2*n2), nrow=J2)
+#   fake.wins2 <- apply(X=fake.bids2, MARGIN=1, FUN=function(x) sort(x=x, decreasing=TRUE)[price])
+#   ret <- bid.quantile.CI(wins=c(fake.wins1,fake.wins2), price=price, n=c(rep(n1,J1),rep(n2,J2)), conf.level=0.90, tau=TAU, NREP=5e3)
+#   covers <- rbind(covers, c(QB(TAU)<=ret[1,2], ret[2,1]<=QB(TAU), ret[3,1]<=QB(TAU) && QB(TAU)<=ret[3,2]))
+# }
+# colMeans(covers) # Output: [1] 0.924 0.918 0.932
+# Sys.time() - st # Around 4 minutes
+# Sys.time()
 
 
 # Function to compute uniform confidence band for CDF of bid distribution
-# J, n, price, wins: same as for bid.quantile.CI above
+# wins, price, n: same as for bid.quantile.CI above
 # conf.level: now the uniform confidence level, like 0.90 for 90%
-# upper: TRUE for upper band, FALSE for lower
-# NREP: number of replications for simulation
 # plot.type: NULL for no plot, '1s' for one-sided bands, '2s' for two-sided bands
-bid.CDF.band <- function(J, n, price, wins, conf.level, NREP=1e4, plot.type='1s') {
+# NREP: number of replications for simulation (higher = more accurate); only applies to vector n
+# pt.beta.flag: use pointwise (average) beta distributions, or pointwise simulated distributions?
+# ALPHA.pts: if the pointwise alpha values have been simulated previously (or you just want to try other values), can specify as a vector here
+# return.ALPHA.pts: (for vector n only) add another column to the return matrix, whose first three entries are the pointwise alpha values
+bid.CDF.band <- function(wins, price, n, conf.level, plot.type='1s', NREP=1e3, pt.beta.flag=TRUE, ALPHA.pts=NULL, return.ALPHA.pts=FALSE) {
   # Process arguments
-  k <- n + 1 - price  #order statistic index of winning bid
   ALPHA.joint <- 1 - conf.level
-  wins <- sort(wins) #so wins[k] is the k'th order statistic
-  
-  # Simulate beta rv's and order statistics
-  beta.J.r.matrix <- matrix(data=NA, nrow=NREP, ncol=J)
-  for (i in 1:NREP) beta.J.r.matrix[i,] <- sort(rbeta(J, k, n+1-k))
-  
-  # Solve for pointwise ALPHA.pt that achieves joint probability equivalent to 1-ALPHA.joint
-  ALPHA.check.fn.lo1 <- function(a) {
-    beta.OS.quantiles <- qbeta( qbeta(  a, 1:J, J:1),  k, n+1-k)
-    pr.joint <- mean(apply(beta.J.r.matrix, MARGIN=1,
-                           FUN=function(b) all(b>=beta.OS.quantiles) ))
-    return(pr.joint - (1-ALPHA.joint))
+  wins <- sort(wins) # so wins[K] is the Kth order statistic
+  if (!is.numeric(n) || !is.numeric(price) || !is.numeric(wins) || !is.numeric(conf.level) || !is.numeric(NREP)) stop("All arguments besides plot.type must be numeric")
+  J <- length(wins)
+  if (length(n)>1 && length(n)!=J) stop("Argument n must be scalar or else vector with length J")
+  if (conf.level<=0 || conf.level>=1) stop("Argument conf.level must satisfy 0<conf.level<1, like conf.level=0.90 for 90% confidence level")
+  if (!is.null(ALPHA.pts) && (!is.numeric(ALPHA.pts) || length(ALPHA.pts)<2 || length(ALPHA.pts)>3)) stop("Argument ALPHA.pts must be either NULL or a numeric vector of length 2 (for scalar n) or 3 (for vector n)")
+
+  if (length(n)==1) { # Use Goldman and Kaplan (2017)
+    k <- n + 1 - price  #order statistic index of winning bid
+    if (is.null(ALPHA.pts)) {
+      ALPHA.pt.1s <- GK.dist.1s.alpha.tilde(n=J, alpha=2*ALPHA.joint-ALPHA.joint^2) / 2
+      ALPHA.pt.2s <- GK.dist.1s.alpha.tilde(n=J, alpha=ALPHA.joint) / 2
+    } else {
+      ALPHA.pt.1s <- ALPHA.pts[1]
+      ALPHA.pt.2s <- ALPHA.pts[2]
+    }
+    y.pts.lo1 <- qbeta( qbeta(  ALPHA.pt.1s, 1:J, J:1),  k, n+1-k)
+    y.pts.up1 <- qbeta( qbeta(1-ALPHA.pt.1s, 1:J, J:1),  k, n+1-k)
+    y.pts.lo2 <- qbeta( qbeta(  ALPHA.pt.2s, 1:J, J:1),  k, n+1-k)
+    y.pts.up2 <- qbeta( qbeta(1-ALPHA.pt.2s, 1:J, J:1),  k, n+1-k)
+    ret <- cbind(winning.bids=wins, UCB.lower.1s=y.pts.lo1, UCB.upper.1s=y.pts.up1,
+                 UCB.lower.2s=y.pts.lo2, UCB.upper.2s=y.pts.up2)
+  } else { # Simulate inid Beta rv's
+    if (pt.beta.flag) {
+      n.avg <- mean(n) # Only for parameterization; does not affect uniform coverage probability
+      k.avg <- n.avg + 1 - price
+      # Alternative: "average CDF" like in David & Nagaraja Thm 5.2.1
+      counts <- table(n)
+      vals <- as.numeric(names(counts))
+      Fbar <- function(x) sum(counts*pbeta(x, shape1=vals+1-price, shape2=price)) / sum(counts)
+    }
+    if (!pt.beta.flag || is.null(ALPHA.pts)) {
+      # Save/set RNG seed
+      oldseed <- NULL
+      if (exists(".Random.seed",.GlobalEnv)) {  #.Random.seed #restore state at end
+        oldseed <- get(".Random.seed",.GlobalEnv)
+      }
+      on.exit(if (!is.null(oldseed)) { assign(".Random.seed", oldseed, .GlobalEnv) }, add=TRUE)
+      set.seed(112358)
+      # 
+      # Simulate inid beta order statistics
+      beta.sims <- NULL
+      for (j in 1:J) {
+        beta.sims <- cbind(beta.sims, rbeta(n=NREP, shape1=n[j]+1-price, shape2=price))
+      }
+      beta.sims <- t(apply(X=beta.sims, MARGIN=1, FUN=sort))
+    }
+    if (is.null(ALPHA.pts)) {
+      # Solve for pointwise ALPHA.pt that achieves joint probability equivalent to 1-ALPHA.joint
+      ALPHA.check.fn.lo1 <- function(a) {
+        if (pt.beta.flag) {
+          # Use average k and n (not particularly good)
+          # beta.OS.quantiles <- qbeta( qbeta(  a, 1:J, J:1),  k.avg, n.avg+1-k.avg)
+          # Use average CDF, and invert to get quantile
+          beta.OS.quantiles <- rep(NA, J)
+          for (j in 1:J) beta.OS.quantiles[j] <- uniroot(f=function(q)Fbar(q)-qbeta(  a, j, J+1-j), interval=0:1)$root
+        } else {
+          beta.OS.quantiles <- apply(X=beta.sims, MARGIN=2, FUN=function(col)quantile(x=col, probs=a, type=6))
+        }
+        pr.joint <- mean(apply(X=beta.sims, MARGIN=1,
+                               FUN=function(b) all(b>=beta.OS.quantiles) ))
+        return(pr.joint - (1-ALPHA.joint))
+      }
+      ALPHA.check.fn.up1 <- function(a) {
+        if (pt.beta.flag) {
+          # beta.OS.quantiles <- qbeta( qbeta(1-a, 1:J, J:1),  k.avg, n.avg+1-k.avg)
+          beta.OS.quantiles <- rep(NA, J)
+          for (j in 1:J) beta.OS.quantiles[j] <- uniroot(f=function(q)Fbar(q)-qbeta(1-a, j, J+1-j), interval=0:1)$root
+        } else {
+          beta.OS.quantiles <- apply(X=beta.sims, MARGIN=2, FUN=function(col)quantile(x=col, probs=1-a, type=6))
+        }
+        pr.joint <- mean(apply(X=beta.sims, MARGIN=1,
+                               FUN=function(b) all(b<=beta.OS.quantiles) ))
+        return(pr.joint - (1-ALPHA.joint))
+      }
+      ALPHA.check.fn.2s <- function(a) {
+        if (pt.beta.flag) {
+          # beta.OS.quantiles.L <- qbeta( qbeta(  a, 1:J, J:1),  k.avg, n.avg+1-k.avg)
+          # beta.OS.quantiles.U <- qbeta( qbeta(1-a, 1:J, J:1),  k.avg, n.avg+1-k.avg)
+          beta.OS.quantiles.L <- beta.OS.quantiles.U <- rep(NA, J)
+          for (j in 1:J) {
+            beta.OS.quantiles.L[j] <- uniroot(f=function(q)Fbar(q)-qbeta(  a, j, J+1-j), interval=0:1)$root
+            beta.OS.quantiles.U[j] <- uniroot(f=function(q)Fbar(q)-qbeta(1-a, j, J+1-j), interval=0:1)$root
+          }
+        } else {
+          beta.OS.quantiles.L <- apply(X=beta.sims, MARGIN=2, FUN=function(col)quantile(x=col, probs= a , type=6))
+          beta.OS.quantiles.U <- apply(X=beta.sims, MARGIN=2, FUN=function(col)quantile(x=col, probs=1-a, type=6))
+        }
+        all2s <- function(b) all(beta.OS.quantiles.L<=b) && all(b<=beta.OS.quantiles.U)
+        pr.joint <- mean( apply(X=beta.sims, MARGIN=1, FUN=all2s) )
+        return(pr.joint - (1-ALPHA.joint))
+      }
+      # If uniroot fails to get close enough (note: uniroot tol is for the root, not the function value)
+      alpha.backup.search <- function(fn, init.raw, ftol, lo=0, hi=1, mult=1e3) {
+        cur <- init.raw   # / (mult*0.8)
+        cur.f <- fn(cur)
+        while (abs(cur.f)>ftol && cur>1e-33) {
+          if (cur.f>0) lo <- cur else hi <- cur
+          if (lo==0) {
+            cur <- cur / mult
+            if (cur<1e-12) ftol <- ALPHA.joint / 20
+          } else if (hi==1) {
+            cur <- cur <- sqrt(lo*hi)   # cur * mult
+          } else cur <- sqrt(lo*hi)
+          cur.f <- fn(cur)
+        }
+        if (abs(cur.f)>ftol) warning(sprintf("Numerical failure: coverage probability may have error of %g",abs(cur.f)))
+        return(cur)
+      }
+      ftol <- ALPHA.joint / 10;  UNITOL <- 1e-5;  UNITOL2 <- 1e-9
+      tmp <- uniroot(ALPHA.check.fn.lo1, interval=0:1, tol=UNITOL)
+      if (abs(tmp$f.root)<ftol) {
+        ALPHA.pt.lo1 <- tmp$root
+      } else {
+        tmp <- uniroot(ALPHA.check.fn.lo1, interval=0:1, tol=UNITOL2)
+        if (abs(tmp$f.root)<ftol) {
+          ALPHA.pt.lo1 <- tmp$root
+        } else {
+          ALPHA.pt.lo1 <- tmp$root - ifelse(tmp$f.root<0, tmp$estim.prec, 0)
+        }
+        # ALPHA.pt.lo1 <- 
+        #   alpha.backup.search(fn=ALPHA.check.fn.lo1, init.raw=GK.dist.1s.alpha.tilde(n=J, alpha=2*ALPHA.joint-ALPHA.joint^2) / 2,
+        #                       ftol=ftol, lo=0, hi=1, mult=1e3)
+      }
+      tmp <- uniroot(ALPHA.check.fn.up1, interval=0:1, tol=UNITOL)
+      if (abs(tmp$f.root)<ftol) {
+        ALPHA.pt.up1 <- tmp$root
+      } else {
+        tmp <- uniroot(ALPHA.check.fn.up1, interval=0:1, tol=UNITOL2)
+        if (abs(tmp$f.root)<ftol) {
+          ALPHA.pt.up1 <- tmp$root
+        } else {
+          ALPHA.pt.up1 <- tmp$root - ifelse(tmp$f.root<0, tmp$estim.prec, 0)
+        }
+        # ALPHA.pt.up1 <- 
+        #   alpha.backup.search(fn=ALPHA.check.fn.up1, init.raw=ALPHA.pt.lo1,
+        #                       ftol=ftol, lo=0, hi=1, mult=1e3)
+      }
+      tmp <- uniroot(ALPHA.check.fn.2s, interval=0:1, tol=UNITOL)
+      if (abs(tmp$f.root)<ftol) {
+        ALPHA.pt.2s <- tmp$root
+      } else {
+        tmp <- uniroot(ALPHA.check.fn.2s, interval=0:1, tol=UNITOL2)
+        if (abs(tmp$f.root)<ftol) {
+          ALPHA.pt.2s <- tmp$root
+        } else {
+          ALPHA.pt.2s <- tmp$root - ifelse(tmp$f.root<0, tmp$estim.prec, 0)
+        }
+        # ALPHA.pt.2s <- 
+        #   alpha.backup.search(fn=ALPHA.check.fn.2s, init.raw=mean(c(ALPHA.pt.lo1,ALPHA.pt.up1))/2,  #GK.dist.1s.alpha.tilde(n=J, alpha=ALPHA.joint) / 2,
+        #                       ftol=ftol, lo=0, hi=1, mult=1e3)
+      }
+      # ALPHA.pt.lo1 <- uniroot(ALPHA.check.fn.lo1, interval=0:1, tol=1e-6)
+      # ALPHA.pt.up1 <- uniroot(ALPHA.check.fn.up1, interval=0:1, tol=1e-6)$root
+      # ALPHA.pt.2s  <- uniroot(ALPHA.check.fn.2s,  interval=0:1, tol=1e-6)$root
+    } else {
+      ALPHA.pt.lo1 <- ALPHA.pts[1]
+      ALPHA.pt.up1 <- ALPHA.pts[2]
+      ALPHA.pt.2s  <- ALPHA.pts[3]
+    }
+    # print(c(ALPHA.pt.lo1, ALPHA.pt.up1, ALPHA.pt.2s))
+    if (pt.beta.flag) {
+      # y.pts.lo1 <- qbeta( qbeta(  ALPHA.pt.lo1, 1:J, J:1),  k.avg, n.avg+1-k.avg)
+      y.pts.lo1 <- rep(NA, J)
+      for (j in 1:J) y.pts.lo1[j] <- uniroot(f=function(q)Fbar(q)-qbeta(  ALPHA.pt.lo1, j, J+1-j), interval=0:1)$root
+      # y.pts.up1 <- qbeta( qbeta(1-ALPHA.pt.up1, 1:J, J:1),  k.avg, n.avg+1-k.avg)
+      y.pts.up1 <- rep(NA, J)
+      for (j in 1:J) y.pts.up1[j] <- uniroot(f=function(q)Fbar(q)-qbeta(1-ALPHA.pt.lo1, j, J+1-j), interval=0:1)$root
+      # y.pts.lo2 <- qbeta( qbeta(  ALPHA.pt.2s,  1:J, J:1),  k.avg, n.avg+1-k.avg)
+      # y.pts.up2 <- qbeta( qbeta(1-ALPHA.pt.2s,  1:J, J:1),  k.avg, n.avg+1-k.avg)
+      y.pts.lo2 <- y.pts.up2 <- rep(NA, J)
+      for (j in 1:J) {
+        y.pts.lo2[j] <- uniroot(f=function(q)Fbar(q)-qbeta(  ALPHA.pt.2s, j, J+1-j), interval=0:1)$root
+        y.pts.up2[j] <- uniroot(f=function(q)Fbar(q)-qbeta(1-ALPHA.pt.2s, j, J+1-j), interval=0:1)$root
+      }
+    } else {
+      y.pts.lo1 <- apply(X=beta.sims, MARGIN=2, FUN=function(col)quantile(x=col, probs=  ALPHA.pt.lo1, type=6))
+      y.pts.up1 <- apply(X=beta.sims, MARGIN=2, FUN=function(col)quantile(x=col, probs=1-ALPHA.pt.up1, type=6))
+      y.pts.lo2 <- apply(X=beta.sims, MARGIN=2, FUN=function(col)quantile(x=col, probs=  ALPHA.pt.2s , type=6))
+      y.pts.up2 <- apply(X=beta.sims, MARGIN=2, FUN=function(col)quantile(x=col, probs=1-ALPHA.pt.2s , type=6))
+    }
+    ret <- cbind(winning.bids=wins, UCB.lower.1s=y.pts.lo1, UCB.upper.1s=y.pts.up1,
+                 UCB.lower.2s=y.pts.lo2, UCB.upper.2s=y.pts.up2)
+    if (return.ALPHA.pts) ret <- cbind(ret, ALPHA.pts=c(ALPHA.pt.lo1, ALPHA.pt.up1, ALPHA.pt.2s, rep(NA,length(wins)-3)))
   }
-  ALPHA.check.fn.up1 <- function(a) {
-    beta.OS.quantiles <- qbeta( qbeta(1-a, 1:J, J:1),  k, n+1-k)
-    pr.joint <- mean(apply(beta.J.r.matrix, MARGIN=1,
-                           FUN=function(b) all(b<=beta.OS.quantiles) ))
-    return(pr.joint - (1-ALPHA.joint))
-  }
-  ALPHA.check.fn.2s <- function(a) {
-    beta.OS.quantiles.L <- qbeta( qbeta(  a, 1:J, J:1),  k, n+1-k)
-    beta.OS.quantiles.U <- qbeta( qbeta(1-a, 1:J, J:1),  k, n+1-k)
-    all2s <- function(b) all(beta.OS.quantiles.L<=b) && all(b<=beta.OS.quantiles.U)
-    pr.joint <- mean( apply(beta.J.r.matrix, MARGIN=1, FUN=all2s) )
-    return(pr.joint - (1-ALPHA.joint))
-  }
-  ALPHA.pt.lo1 <- uniroot(ALPHA.check.fn.lo1, interval=c(0, 1))$root
-  ALPHA.pt.up1 <- uniroot(ALPHA.check.fn.up1, interval=c(0, 1))$root
-  ALPHA.pt.2s  <- uniroot(ALPHA.check.fn.2s,  interval=c(0, 1))$root
-  y.pts.lo1 <- qbeta( qbeta(  ALPHA.pt.lo1, 1:J, J:1),  k, n+1-k)
-  y.pts.up1 <- qbeta( qbeta(1-ALPHA.pt.up1, 1:J, J:1),  k, n+1-k)
-  y.pts.lo2 <- qbeta( qbeta(  ALPHA.pt.2s,  1:J, J:1),  k, n+1-k)
-  y.pts.up2 <- qbeta( qbeta(1-ALPHA.pt.2s,  1:J, J:1),  k, n+1-k)
-  ret <- cbind(winning.bids=wins, UCB.lower.1s=y.pts.lo1, UCB.upper.1s=y.pts.up1,
-               UCB.lower.2s=y.pts.lo2, UCB.upper.2s=y.pts.up2)
+
+  # Plot if desired
   if (!is.null(plot.type) && !is.na(plot.type)) {
     if (plot.type=='1s') {
       plot.bid.CDF.band(band=ret, conf.level=conf.level, two.sided=FALSE)
     } else if (plot.type=='2s') {
       plot.bid.CDF.band(band=ret, conf.level=conf.level, two.sided=TRUE)
-    } else if (plot.type!='') warning("plot.type is neither '1s' nor '2s' so is ignored (no plot).")
+    } else if (!is.null(plot.type) && !is.na(plot.type) && plot.type!='') warning("Argument plot.type is neither '1s' nor '2s' so is ignored (no plot).")
   }
-  invisible(ret)
+  return(ret)
 }
 
 # Plot fn called above; feel free to customize
@@ -222,12 +413,70 @@ plot.bid.CDF.band <- function(band, conf.level=NA, two.sided=FALSE, main=NULL,
 # J <- 100; n <- 10; price <- 2
 # fake.bids <- matrix(data=rnorm(J*n, mean=100, sd=10), nrow=J)
 # fake.wins <- apply(X=fake.bids, MARGIN=1, FUN=function(x) sort(x=x, decreasing=TRUE)[price])
-# ret <- bid.CDF.band(J=J, n=n, price=price, wins=fake.wins, conf.level=0.90)
-# # 
+# ret <- bid.CDF.band(wins=fake.wins, price=price, n=n, conf.level=0.90)
+# #
+# (st <- Sys.time())
+# set.seed(112358)
+# J <- 100; n <- 10; price <- 2
+# NREP <- 1000 #simulation replications
+# ALPHA <- 0.1
+# FB <- punif
+# covers <- covers2 <- NULL
+# for (irep in 1:NREP) {
+#   fake.bids <- matrix(data=runif(J*n), nrow=J)
+#   fake.wins <- apply(X=fake.bids, MARGIN=1, FUN=function(x) sort(x=x, decreasing=TRUE)[price])
+#   ret <- bid.CDF.band(wins=fake.wins, price=price, n=n, conf.level=1-ALPHA, plot.type=NULL)
+#   cover1L <- all(ret[,2]<=FB(ret[,1]))
+#   cover1U <- all(FB(ret[,1])<=ret[,3])
+#   cover2  <- all(ret[,4]<=FB(ret[,1]), FB(ret[,1])<=ret[,5])
+#   covers  <- rbind(covers, c(cover1L, cover1U, cover2))
+#   ret <- bid.CDF.band(wins=fake.wins, price=price, n=rep(n,J), conf.level=1-ALPHA, plot.type=NULL, NREP=1e3)
+#   cover1L <- all(ret[,2]<=FB(ret[,1]))
+#   cover1U <- all(FB(ret[,1])<=ret[,3])
+#   cover2  <- all(ret[,4]<=FB(ret[,1]), FB(ret[,1])<=ret[,5])
+#   covers2  <- rbind(covers2, c(cover1L, cover1U, cover2))
+# }
+# rbind( colMeans(covers), colMeans(covers2) ) # Output: 0.903 0.922 0.910 \\ 0.904 0.918 0.914
+# Sys.time() - st # Around 3-4 minutes
+# Sys.time()
+# #
+print(st <- Sys.time())
+pt.beta.flag <- TRUE
+set.seed(112358)
+NREP <- 100 #simulation replications
+beta.sim.rep <- 1e4 #draws from beta order statistic distribution
+J1 <- J2 <- 20
+n1 <- 4;  n2 <- 10
+price <- 2
+ALPHA <- 0.1
+FB <- punif
+covers <- NULL
+A.pts <- NULL
+for (irep in 1:NREP) {
+  fake.bids1 <- matrix(data=runif(J1*n1), nrow=J1)
+  fake.wins1 <- apply(X=fake.bids1, MARGIN=1, FUN=function(x) sort(x=x, decreasing=TRUE)[price])
+  fake.bids2 <- matrix(data=runif(J2*n2), nrow=J2)
+  fake.wins2 <- apply(X=fake.bids2, MARGIN=1, FUN=function(x) sort(x=x, decreasing=TRUE)[price])
+  if (irep==1) {
+    ret <- bid.CDF.band(wins=c(fake.wins1,fake.wins2), price=price, n=c(rep(n1,J1),rep(n2,J2)), conf.level=1-ALPHA, plot.type=NULL, NREP=beta.sim.rep, pt.beta.flag=pt.beta.flag, return.ALPHA.pts=TRUE)
+    A.pts <- ret[1:3,'ALPHA.pts']
+    print(sprintf("A.pts=%g",A.pts)) # original with pt.beta.flag=TRUE: [1] "A.pts=1.28295e-06" "A.pts=0.0108473"   "A.pts=1.28338e-06"
+  } else {
+    ret <- bid.CDF.band(wins=c(fake.wins1,fake.wins2), price=price, n=c(rep(n1,J1),rep(n2,J2)), conf.level=1-ALPHA, plot.type=NULL, NREP=beta.sim.rep, pt.beta.flag=pt.beta.flag, ALPHA.pts=A.pts)
+  }
+  cover1L <- all(ret[,2]<=FB(ret[,1]))
+  cover1U <- all(FB(ret[,1])<=ret[,3])
+  cover2  <- all(ret[,4]<=FB(ret[,1]), FB(ret[,1])<=ret[,5])
+  covers  <- rbind(covers, c(cover1L, cover1U, cover2))
+}
+print(colMeans(covers))  # original w/ pt.beta.flag=TRUE: [1] 0.901 0.903 0.901
+print(Sys.time() - st)
+print(Sys.time())
+#
 # set.seed(112358)
 # J <- 10; n <- 4; price <- 2
 # fake.bids <- matrix(data=rnorm(J*n, mean=100, sd=10), nrow=J)
 # fake.wins <- apply(X=fake.bids, MARGIN=1, FUN=function(x) sort(x=x, decreasing=TRUE)[price])
-# ret <- bid.CDF.band(J=J, n=n, price=price, wins=fake.wins, conf.level=0.90)
+# ret <- bid.CDF.band(wins=fake.wins, price=price, n=n, conf.level=0.90)
 
 #EOF
