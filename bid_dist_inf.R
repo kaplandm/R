@@ -440,38 +440,38 @@ plot.bid.CDF.band <- function(band, conf.level=NA, two.sided=FALSE, main=NULL,
 # Sys.time() - st # Around 3-4 minutes
 # Sys.time()
 # #
-print(st <- Sys.time())
-pt.beta.flag <- TRUE
-set.seed(112358)
-NREP <- 100 #simulation replications
-beta.sim.rep <- 1e4 #draws from beta order statistic distribution
-J1 <- J2 <- 20
-n1 <- 4;  n2 <- 10
-price <- 2
-ALPHA <- 0.1
-FB <- punif
-covers <- NULL
-A.pts <- NULL
-for (irep in 1:NREP) {
-  fake.bids1 <- matrix(data=runif(J1*n1), nrow=J1)
-  fake.wins1 <- apply(X=fake.bids1, MARGIN=1, FUN=function(x) sort(x=x, decreasing=TRUE)[price])
-  fake.bids2 <- matrix(data=runif(J2*n2), nrow=J2)
-  fake.wins2 <- apply(X=fake.bids2, MARGIN=1, FUN=function(x) sort(x=x, decreasing=TRUE)[price])
-  if (irep==1) {
-    ret <- bid.CDF.band(wins=c(fake.wins1,fake.wins2), price=price, n=c(rep(n1,J1),rep(n2,J2)), conf.level=1-ALPHA, plot.type=NULL, NREP=beta.sim.rep, pt.beta.flag=pt.beta.flag, return.ALPHA.pts=TRUE)
-    A.pts <- ret[1:3,'ALPHA.pts']
-    print(sprintf("A.pts=%g",A.pts)) # original with pt.beta.flag=TRUE: [1] "A.pts=1.28295e-06" "A.pts=0.0108473"   "A.pts=1.28338e-06"
-  } else {
-    ret <- bid.CDF.band(wins=c(fake.wins1,fake.wins2), price=price, n=c(rep(n1,J1),rep(n2,J2)), conf.level=1-ALPHA, plot.type=NULL, NREP=beta.sim.rep, pt.beta.flag=pt.beta.flag, ALPHA.pts=A.pts)
-  }
-  cover1L <- all(ret[,2]<=FB(ret[,1]))
-  cover1U <- all(FB(ret[,1])<=ret[,3])
-  cover2  <- all(ret[,4]<=FB(ret[,1]), FB(ret[,1])<=ret[,5])
-  covers  <- rbind(covers, c(cover1L, cover1U, cover2))
-}
-print(colMeans(covers))  # original w/ pt.beta.flag=TRUE: [1] 0.901 0.903 0.901
-print(Sys.time() - st)
-print(Sys.time())
+# print(st <- Sys.time())
+# pt.beta.flag <- TRUE
+# set.seed(112358)
+# NREP <- 100 #simulation replications
+# beta.sim.rep <- 1e4 #draws from beta order statistic distribution
+# J1 <- J2 <- 20
+# n1 <- 4;  n2 <- 10
+# price <- 2
+# ALPHA <- 0.1
+# FB <- punif
+# covers <- NULL
+# A.pts <- NULL
+# for (irep in 1:NREP) {
+#   fake.bids1 <- matrix(data=runif(J1*n1), nrow=J1)
+#   fake.wins1 <- apply(X=fake.bids1, MARGIN=1, FUN=function(x) sort(x=x, decreasing=TRUE)[price])
+#   fake.bids2 <- matrix(data=runif(J2*n2), nrow=J2)
+#   fake.wins2 <- apply(X=fake.bids2, MARGIN=1, FUN=function(x) sort(x=x, decreasing=TRUE)[price])
+#   if (irep==1) {
+#     ret <- bid.CDF.band(wins=c(fake.wins1,fake.wins2), price=price, n=c(rep(n1,J1),rep(n2,J2)), conf.level=1-ALPHA, plot.type=NULL, NREP=beta.sim.rep, pt.beta.flag=pt.beta.flag, return.ALPHA.pts=TRUE)
+#     A.pts <- ret[1:3,'ALPHA.pts']
+#     print(sprintf("A.pts=%g",A.pts)) # original with pt.beta.flag=TRUE: [1] "A.pts=1.28295e-06" "A.pts=0.0108473"   "A.pts=1.28338e-06"
+#   } else {
+#     ret <- bid.CDF.band(wins=c(fake.wins1,fake.wins2), price=price, n=c(rep(n1,J1),rep(n2,J2)), conf.level=1-ALPHA, plot.type=NULL, NREP=beta.sim.rep, pt.beta.flag=pt.beta.flag, ALPHA.pts=A.pts)
+#   }
+#   cover1L <- all(ret[,2]<=FB(ret[,1]))
+#   cover1U <- all(FB(ret[,1])<=ret[,3])
+#   cover2  <- all(ret[,4]<=FB(ret[,1]), FB(ret[,1])<=ret[,5])
+#   covers  <- rbind(covers, c(cover1L, cover1U, cover2))
+# }
+# print(colMeans(covers))  # should be all near 0.90 (esp. w/ larger NREP)
+# print(Sys.time() - st)
+# print(Sys.time())
 #
 # set.seed(112358)
 # J <- 10; n <- 4; price <- 2
