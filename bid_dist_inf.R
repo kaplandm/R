@@ -1,6 +1,6 @@
 # Functions for finite-sample inference on bid distributions from auction data
 #  - confidence interval for specific quantile
-#  - uniform confidence band for CDF
+#  - uniform confidence band for CDF or quantile function
 # Original draft: Ronald D. Flores
 # Current code: David M. Kaplan & Xin Liu
 # Feedback/support: https://kaplandm.github.io/
@@ -145,7 +145,7 @@ bid.quantile.CI <- function(wins, price, n, conf.level, tau, NREP=1e3) {
 #   ret <- bid.quantile.CI(wins=c(fake.wins1,fake.wins2), price=price, n=c(rep(n1,J1),rep(n2,J2)), conf.level=0.90, tau=TAU, NREP=5e3)
 #   covers <- rbind(covers, c(QB(TAU)<=ret[1,2], ret[2,1]<=QB(TAU), ret[3,1]<=QB(TAU) && QB(TAU)<=ret[3,2]))
 # }
-# colMeans(covers) # Output: [1] 0.924 0.918 0.932
+# colMeans(covers) # should be around 1-ALPHA (some simulation error; less if increase NREP)
 # Sys.time() - st # Around 4 minutes
 # Sys.time()
 
@@ -154,11 +154,12 @@ bid.quantile.CI <- function(wins, price, n, conf.level, tau, NREP=1e3) {
 # wins, price, n: same as for bid.quantile.CI above
 # conf.level: now the uniform confidence level, like 0.90 for 90%
 # plot.type: NULL for no plot, '1s' for one-sided bands, '2s' for two-sided bands
+# plot.quantile: TRUE to plot quantile function bands, FALSE for CDF bands (if non-NULL plot.type)
 # NREP: number of replications for simulation (higher = more accurate); only applies to vector n
 # pt.beta.flag: use pointwise (average) beta distributions, or pointwise simulated distributions?
 # ALPHA.pts: if the pointwise alpha values have been simulated previously (or you just want to try other values), can specify as a vector here
 # return.ALPHA.pts: (for vector n only) add another column to the return matrix, whose first three entries are the pointwise alpha values
-bid.CDF.band <- function(wins, price, n, conf.level, plot.type='1s', NREP=1e3, pt.beta.flag=TRUE, ALPHA.pts=NULL, return.ALPHA.pts=FALSE) {
+bid.band <- function(wins, price, n, conf.level, plot.type='1s', plot.quantile=TRUE, NREP=1e3, pt.beta.flag=TRUE, ALPHA.pts=NULL, return.ALPHA.pts=FALSE) {
   # Process arguments
   ALPHA.joint <- 1 - conf.level
   wins <- sort(wins) # so wins[K] is the Kth order statistic
@@ -226,7 +227,6 @@ bid.CDF.band <- function(wins, price, n, conf.level, plot.type='1s', NREP=1e3, p
       }
       ALPHA.check.fn.up1 <- function(a) {
         if (pt.beta.flag) {
-          # beta.OS.quantiles <- qbeta( qbeta(1-a, 1:J, J:1),  k.avg, n.avg+1-k.avg)
           beta.OS.quantiles <- rep(NA, J)
           for (j in 1:J) beta.OS.quantiles[j] <- uniroot(f=function(q)Fbar(q)-qbeta(1-a, j, J+1-j), interval=0:1)$root
         } else {
@@ -238,8 +238,6 @@ bid.CDF.band <- function(wins, price, n, conf.level, plot.type='1s', NREP=1e3, p
       }
       ALPHA.check.fn.2s <- function(a) {
         if (pt.beta.flag) {
-          # beta.OS.quantiles.L <- qbeta( qbeta(  a, 1:J, J:1),  k.avg, n.avg+1-k.avg)
-          # beta.OS.quantiles.U <- qbeta( qbeta(1-a, 1:J, J:1),  k.avg, n.avg+1-k.avg)
           beta.OS.quantiles.L <- beta.OS.quantiles.U <- rep(NA, J)
           for (j in 1:J) {
             beta.OS.quantiles.L[j] <- uniroot(f=function(q)Fbar(q)-qbeta(  a, j, J+1-j), interval=0:1)$root
@@ -281,9 +279,6 @@ bid.CDF.band <- function(wins, price, n, conf.level, plot.type='1s', NREP=1e3, p
         } else {
           ALPHA.pt.lo1 <- tmp$root - ifelse(tmp$f.root<0, tmp$estim.prec, 0)
         }
-        # ALPHA.pt.lo1 <- 
-        #   alpha.backup.search(fn=ALPHA.check.fn.lo1, init.raw=GK.dist.1s.alpha.tilde(n=J, alpha=2*ALPHA.joint-ALPHA.joint^2) / 2,
-        #                       ftol=ftol, lo=0, hi=1, mult=1e3)
       }
       tmp <- uniroot(ALPHA.check.fn.up1, interval=0:1, tol=UNITOL)
       if (abs(tmp$f.root)<ftol) {
@@ -295,9 +290,6 @@ bid.CDF.band <- function(wins, price, n, conf.level, plot.type='1s', NREP=1e3, p
         } else {
           ALPHA.pt.up1 <- tmp$root - ifelse(tmp$f.root<0, tmp$estim.prec, 0)
         }
-        # ALPHA.pt.up1 <- 
-        #   alpha.backup.search(fn=ALPHA.check.fn.up1, init.raw=ALPHA.pt.lo1,
-        #                       ftol=ftol, lo=0, hi=1, mult=1e3)
       }
       tmp <- uniroot(ALPHA.check.fn.2s, interval=0:1, tol=UNITOL)
       if (abs(tmp$f.root)<ftol) {
@@ -309,13 +301,7 @@ bid.CDF.band <- function(wins, price, n, conf.level, plot.type='1s', NREP=1e3, p
         } else {
           ALPHA.pt.2s <- tmp$root - ifelse(tmp$f.root<0, tmp$estim.prec, 0)
         }
-        # ALPHA.pt.2s <- 
-        #   alpha.backup.search(fn=ALPHA.check.fn.2s, init.raw=mean(c(ALPHA.pt.lo1,ALPHA.pt.up1))/2,  #GK.dist.1s.alpha.tilde(n=J, alpha=ALPHA.joint) / 2,
-        #                       ftol=ftol, lo=0, hi=1, mult=1e3)
       }
-      # ALPHA.pt.lo1 <- uniroot(ALPHA.check.fn.lo1, interval=0:1, tol=1e-6)
-      # ALPHA.pt.up1 <- uniroot(ALPHA.check.fn.up1, interval=0:1, tol=1e-6)$root
-      # ALPHA.pt.2s  <- uniroot(ALPHA.check.fn.2s,  interval=0:1, tol=1e-6)$root
     } else {
       ALPHA.pt.lo1 <- ALPHA.pts[1]
       ALPHA.pt.up1 <- ALPHA.pts[2]
@@ -323,14 +309,10 @@ bid.CDF.band <- function(wins, price, n, conf.level, plot.type='1s', NREP=1e3, p
     }
     # print(c(ALPHA.pt.lo1, ALPHA.pt.up1, ALPHA.pt.2s))
     if (pt.beta.flag) {
-      # y.pts.lo1 <- qbeta( qbeta(  ALPHA.pt.lo1, 1:J, J:1),  k.avg, n.avg+1-k.avg)
       y.pts.lo1 <- rep(NA, J)
       for (j in 1:J) y.pts.lo1[j] <- uniroot(f=function(q)Fbar(q)-qbeta(  ALPHA.pt.lo1, j, J+1-j), interval=0:1)$root
-      # y.pts.up1 <- qbeta( qbeta(1-ALPHA.pt.up1, 1:J, J:1),  k.avg, n.avg+1-k.avg)
       y.pts.up1 <- rep(NA, J)
       for (j in 1:J) y.pts.up1[j] <- uniroot(f=function(q)Fbar(q)-qbeta(1-ALPHA.pt.lo1, j, J+1-j), interval=0:1)$root
-      # y.pts.lo2 <- qbeta( qbeta(  ALPHA.pt.2s,  1:J, J:1),  k.avg, n.avg+1-k.avg)
-      # y.pts.up2 <- qbeta( qbeta(1-ALPHA.pt.2s,  1:J, J:1),  k.avg, n.avg+1-k.avg)
       y.pts.lo2 <- y.pts.up2 <- rep(NA, J)
       for (j in 1:J) {
         y.pts.lo2[j] <- uniroot(f=function(q)Fbar(q)-qbeta(  ALPHA.pt.2s, j, J+1-j), interval=0:1)$root
@@ -349,25 +331,31 @@ bid.CDF.band <- function(wins, price, n, conf.level, plot.type='1s', NREP=1e3, p
 
   # Plot if desired
   if (!is.null(plot.type) && !is.na(plot.type)) {
+    if (is.null(plot.quantile) || !is.logical(plot.quantile) || is.na(plot.quantile)) {
+      warning('Argument plot.quantile should be TRUE or FALSE; setting to TRUE and proceeding')
+      plot.quantile <- TRUE
+    }
     if (plot.type=='1s') {
-      plot.bid.CDF.band(band=ret, conf.level=conf.level, two.sided=FALSE)
+      plot.bid.band(band=ret, conf.level=conf.level, two.sided=FALSE, quantile.band=plot.quantile)
     } else if (plot.type=='2s') {
-      plot.bid.CDF.band(band=ret, conf.level=conf.level, two.sided=TRUE)
+      plot.bid.CDF.band(band=ret, conf.level=conf.level, two.sided=TRUE, quantile.band=plot.quantile)
     } else if (!is.null(plot.type) && !is.na(plot.type) && plot.type!='') warning("Argument plot.type is neither '1s' nor '2s' so is ignored (no plot).")
   }
   return(ret)
 }
 
-# Plot fn called above; feel free to customize
-# The first argument 'band' is the return value from bid.CDF.band()
+
+# Plot uniform confidence band for either quantile function or CDF of bid distribution
+# Feel free to customize (or email to request customization)
+# band: the return value from calling bid.CDF.band()
 # conf.level needs to be provided separately (e.g., 0.90 for 90% confidence level)
 # two.sided: FALSE for one-sided, TRUE for two-sided (slightly wider but usually pretty similar)
 # main: title for plot
 # plot.legend: include a legend? (TRUE/FALSE)
 # mar: margins argument for par()
 # ...: any other arguments to pass along to plot(), like xlim, yaxs, etc.
-plot.bid.CDF.band <- function(band, conf.level=NA, two.sided=FALSE, main=NULL, 
-                              plot.legend=TRUE, mar=c(5.1,4.1,6.1,2.1), ...) {
+plot.bid.band <- function(band, conf.level=NA, two.sided=FALSE, quantile.band=TRUE,
+                          main=NULL, plot.legend=TRUE, mar=c(5.1,4.1,6.1,2.1), ...) {
   par(mar=mar)
   if (is.null(main)) {
     main <- sprintf('%s uniform confidence band%s\n',
@@ -375,29 +363,39 @@ plot.bid.CDF.band <- function(band, conf.level=NA, two.sided=FALSE, main=NULL,
                     ifelse(two.sided,'','s'))
   }
   wins <- band[,'winning.bids']
-  y.pts.lo1 <- band[,'UCB.lower.1s']
-  y.pts.lo2 <- band[,'UCB.lower.2s']
-  y.pts.up1 <- band[,'UCB.upper.1s']
-  y.pts.up2 <- band[,'UCB.upper.2s']
-  plot(x=range(wins), y=range(y.pts.up1,y.pts.lo1,y.pts.up2,y.pts.lo2), type='n',
-       xlab="Bid value", ylab="Bid CDF", ylim=0:1, main=main, yaxt='n', ...)
-  axis(side=2, at=0:4/4)
+  tau.lo1 <- band[,'UCB.lower.1s']
+  tau.lo2 <- band[,'UCB.lower.2s']
+  tau.up1 <- band[,'UCB.upper.1s']
+  tau.up2 <- band[,'UCB.upper.2s']
+  if (quantile.band) {
+    plot(x=range(tau.up1,tau.lo1,tau.up2,tau.lo2), y=range(wins), type='n',
+         xlab=expression(Quantile~(tau)), ylab="Bid value", xlim=0:1, main=main, xaxt='n', ...)
+    axis(side=1, at=0:4/4)
+  } else {
+    plot(x=range(wins), y=range(tau.up1,tau.lo1,tau.up2,tau.lo2), type='n',
+         xlab="Bid value", ylab="Bid CDF", ylim=0:1, main=main, yaxt='n', ...)
+    axis(side=2, at=0:4/4)
+  }
   bignum <- 100*(max(wins)-min(wins))
   if (two.sided) {
-    lines(x=c(wins[1]-bignum,wins[1],wins,max(wins)+bignum), 
-          y=c(0,0,y.pts.lo2,max(y.pts.lo2)),
-          type='s', lwd=2, lty=2, col=1)
-    lines(x=c(wins[1]-bignum,wins,max(wins),max(wins)+bignum),
-          y=c(min(y.pts.up2),y.pts.up2,1,1),
-          type='S', lwd=2, lty=2, col=1)
-    if (plot.legend) legend('bottomright', legend='Two-sided', lty=2, lwd=2)
+    x <- c(wins[1]-bignum,wins[1],wins,max(wins)+bignum)
+    y <- c(0,0,tau.lo2,max(tau.lo2))
+    if (quantile.band) { z <- y; y <- x; x <- z }
+    lines(x=x, y=y, type='s', lwd=2, lty=2, col=1)
+    x <- c(wins[1]-bignum,wins,max(wins),max(wins)+bignum)
+    y <- c(min(tau.up2),tau.up2,1,1)
+    if (quantile.band) { z <- y; y <- x; x <- z }
+    lines(x=x, y=y, type='S', lwd=2, lty=2, col=1)
+    if (plot.legend) legend(ifelse(quantile.band,'topleft','bottomright'), legend='Two-sided', lty=2, lwd=2)
   } else {
-    lines(x=c(wins[1]-bignum,wins[1],wins,max(wins)+bignum),
-          y=c(0,0,y.pts.lo1,max(y.pts.lo1)),
-          type='s', lwd=2, lty=2, col=1)
-    lines(x=c(wins[1]-bignum,wins,max(wins),max(wins)+bignum),
-          y=c(min(y.pts.up1),y.pts.up1,1,1),
-          type='S', lwd=2, lty=2, col=1)
+    x <- c(wins[1]-bignum,wins[1],wins,max(wins)+bignum)
+    y <- c(0,0,tau.lo1,max(tau.lo1))
+    if (quantile.band) { z <- y; y <- x; x <- z }
+    lines(x=x, y=y, type='s', lwd=2, lty=2, col=1)
+    x <- c(wins[1]-bignum,wins,max(wins),max(wins)+bignum)
+    y <- c(min(tau.up1),tau.up1,1,1)
+    if (quantile.band) { z <- y; y <- x; x <- z }
+    lines(x=x, y=y, type='S', lwd=2, lty=2, col=1)
     if (plot.legend) {
       tmp <- legend('top', plot=FALSE, lty=2, lwd=2, ncol=2,
                     legend=c('Lower 1-sided','Upper 1-sided'))
@@ -407,6 +405,7 @@ plot.bid.CDF.band <- function(band, conf.level=NA, two.sided=FALSE, main=NULL,
     }
   }
 }
+
 
 # # Examples
 # set.seed(112358)
