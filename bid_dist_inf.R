@@ -1,7 +1,7 @@
 # Functions for finite-sample inference on bid distributions from auction data
 #  - confidence interval for specific quantile
 #  - uniform confidence band for CDF or quantile function
-# Original draft: Ronald D. Flores
+# Help with initial code: Ronald D. Flores
 # Current code: David M. Kaplan & Xin Liu
 # Feedback/support: https://kaplandm.github.io/
 
