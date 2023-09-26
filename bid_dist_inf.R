@@ -169,7 +169,7 @@ bid.band <- function(wins, price, n, conf.level, plot.type='1s', plot.quantile=T
   if (conf.level<=0 || conf.level>=1) stop("Argument conf.level must satisfy 0<conf.level<1, like conf.level=0.90 for 90% confidence level")
   if (!is.null(ALPHA.pts) && (!is.numeric(ALPHA.pts) || length(ALPHA.pts)<2 || length(ALPHA.pts)>3)) stop("Argument ALPHA.pts must be either NULL or a numeric vector of length 2 (for scalar n) or 3 (for vector n)")
 
-  if (length(n)==1) { # Use Goldman and Kaplan (2017)
+  if (length(n)==1) { # Use Goldman and Kaplan (2018)
     k <- n + 1 - price  #order statistic index of winning bid
     if (is.null(ALPHA.pts)) {
       ALPHA.pt.1s <- GK.dist.1s.alpha.tilde(n=J, alpha=2*ALPHA.joint-ALPHA.joint^2) / 2
