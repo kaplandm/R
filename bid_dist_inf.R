@@ -379,26 +379,28 @@ plot.bid.band <- function(band, conf.level=NA, two.sided=FALSE, quantile.band=TR
     }
   }
   bignum <- 100*(max(wins)-min(wins))
-  if (two.sided) {
-    x <- c(wins[1]-bignum,wins[1],wins,max(wins)+bignum)
-    y <- c(0,0,tau.lo2,max(tau.lo2))
-    if (quantile.band) { z <- y; y <- x; x <- z }
-    lines(x=x, y=y, type='s', lwd=2, lty=2, col=col)
-    x <- c(wins[1]-bignum,wins,max(wins),max(wins)+bignum)
-    y <- c(min(tau.up2),tau.up2,1,1)
-    if (quantile.band) { z <- y; y <- x; x <- z }
-    lines(x=x, y=y, type='S', lwd=2, lty=2, col=col)
-    if (plot.legend) legend(ifelse(quantile.band,'topleft','bottomright'), legend='Two-sided', lty=2, lwd=2, col=col)
+  tau.lo <- tau.lo1;  tau.up <- tau.up1
+  if (two.sided) { tau.lo <- tau.lo2;  tau.up <- tau.up2 }
+  w.core <- c( wins[1], wins, max(wins)+bignum )
+  tau.core <- c( 0, tau.lo, max(tau.lo) )
+  if (quantile.band) {
+    y <- c(w.core);  x <- c(tau.core)
   } else {
-    x <- c(wins[1]-bignum,wins[1],wins,max(wins)+bignum)
-    y <- c(0,0,tau.lo1,max(tau.lo1))
-    if (quantile.band) { z <- y; y <- x; x <- z }
-    lines(x=x, y=y, type='s', lwd=2, lty=2, col=col)
-    x <- c(wins[1]-bignum,wins,max(wins),max(wins)+bignum)
-    y <- c(min(tau.up1),tau.up1,1,1)
-    if (quantile.band) { z <- y; y <- x; x <- z }
-    lines(x=x, y=y, type='S', lwd=2, lty=2, col=col)
-    if (plot.legend) {
+    x <- c(0, w.core);  y <- c(0, tau.core)
+  }
+  lines(x=x, y=y, type=ifelse(quantile.band,'S','s'), lwd=2, lty=2, col=col)
+  w.core <- c( wins, max(wins) )
+  tau.core <- c( tau.up, 1)
+  if (quantile.band) {
+    y <- c(0, w.core);  x <- c(0, tau.core)
+  } else {
+    x <- c(0, w.core, max(wins)+bignum);  y <- c(min(tau.up), tau.core, 1)
+  }
+  lines(x=x, y=y, type=ifelse(quantile.band,'s','S'), lwd=2, lty=2, col=col)
+  if (plot.legend) {
+    if (two.sided) {
+      legend(ifelse(quantile.band,'topleft','bottomright'), legend='Two-sided', lty=2, lwd=2, col=col)
+    } else {
       tmp <- legend('top', plot=FALSE, lty=2, lwd=2, col=col, ncol=2,
                     legend=c('Lower 1-sided','Upper 1-sided'))
       newxy <- c(tmp$rect$left, tmp$rect$top + 1.01*tmp$rect$h)
