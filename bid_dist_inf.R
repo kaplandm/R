@@ -355,7 +355,7 @@ bid.band <- function(wins, price, n, conf.level, plot.type='1s', plot.quantile=T
 # mar: margins argument for par()
 # ...: any other arguments to pass along to plot(), like xlim, yaxs, etc.
 plot.bid.band <- function(band, conf.level=NA, two.sided=FALSE, quantile.band=TRUE,
-                          main=NULL, plot.legend=TRUE, col=1, add=FALSE, mar=c(5.1,4.1,6.1,2.1), ...) {
+                          main=NULL, plot.legend=TRUE, add=FALSE, col=1, lwd=2, lty=2, mar=c(5.1,4.1,6.1,2.1), ...) {
   par(mar=mar)
   if (is.null(main)) {
     main <- sprintf('%s uniform confidence band%s\n',
@@ -388,7 +388,7 @@ plot.bid.band <- function(band, conf.level=NA, two.sided=FALSE, quantile.band=TR
   } else {
     x <- c(0, w.core);  y <- c(0, tau.core)
   }
-  lines(x=x, y=y, type=ifelse(quantile.band,'S','s'), lwd=2, lty=2, col=col)
+  lines(x=x, y=y, type=ifelse(quantile.band,'S','s'), lwd=lwd, lty=lty, col=col)
   w.core <- c( wins, max(wins) )
   tau.core <- c( tau.up, 1)
   if (quantile.band) {
@@ -396,16 +396,16 @@ plot.bid.band <- function(band, conf.level=NA, two.sided=FALSE, quantile.band=TR
   } else {
     x <- c(0, w.core, max(wins)+bignum);  y <- c(min(tau.up), tau.core, 1)
   }
-  lines(x=x, y=y, type=ifelse(quantile.band,'s','S'), lwd=2, lty=2, col=col)
+  lines(x=x, y=y, type=ifelse(quantile.band,'s','S'), lwd=lwd, lty=lty, col=col)
   if (plot.legend) {
     if (two.sided) {
-      legend(ifelse(quantile.band,'topleft','bottomright'), legend='Two-sided', lty=2, lwd=2, col=col)
+      legend(ifelse(quantile.band,'topleft','bottomright'), legend='Two-sided', lwd=lwd, lty=lty, col=col)
     } else {
-      tmp <- legend('top', plot=FALSE, lty=2, lwd=2, col=col, ncol=2,
+      tmp <- legend('top', plot=FALSE, lwd=lwd, lty=lty, col=col, ncol=2,
                     legend=c('Lower 1-sided','Upper 1-sided'))
       newxy <- c(tmp$rect$left, tmp$rect$top + 1.01*tmp$rect$h)
       legend(x=newxy[1], y=newxy[2], legend=c('Lower 1-sided','Upper 1-sided'),
-             lty=2, lwd=2, col=col, ncol=2, xpd=NA)
+             lwd=lwd, lty=lty, col=col, ncol=2, xpd=NA)
     }
   }
 }
