@@ -338,7 +338,7 @@ bid.band <- function(wins, price, n, conf.level, plot.type='1s', plot.quantile=T
     if (plot.type=='1s') {
       plot.bid.band(band=ret, conf.level=conf.level, two.sided=FALSE, quantile.band=plot.quantile)
     } else if (plot.type=='2s') {
-      plot.bid.CDF.band(band=ret, conf.level=conf.level, two.sided=TRUE, quantile.band=plot.quantile)
+      plot.bid.band(band=ret, conf.level=conf.level, two.sided=TRUE, quantile.band=plot.quantile)
     } else if (!is.null(plot.type) && !is.na(plot.type) && plot.type!='') warning("Argument plot.type is neither '1s' nor '2s' so is ignored (no plot).")
   }
   return(ret)
@@ -347,7 +347,7 @@ bid.band <- function(wins, price, n, conf.level, plot.type='1s', plot.quantile=T
 
 # Plot uniform confidence band for either quantile function or CDF of bid distribution
 # Feel free to customize (or email to request customization)
-# band: the return value from calling bid.CDF.band()
+# band: the return value from calling bid.band()
 # conf.level needs to be provided separately (e.g., 0.90 for 90% confidence level)
 # two.sided: FALSE for one-sided, TRUE for two-sided (slightly wider but usually pretty similar)
 # main: title for plot
@@ -414,7 +414,7 @@ plot.bid.band <- function(band, conf.level=NA, two.sided=FALSE, quantile.band=TR
 # J <- 100; n <- 10; price <- 2
 # fake.bids <- matrix(data=rnorm(J*n, mean=100, sd=10), nrow=J)
 # fake.wins <- apply(X=fake.bids, MARGIN=1, FUN=function(x) sort(x=x, decreasing=TRUE)[price])
-# ret <- bid.CDF.band(wins=fake.wins, price=price, n=n, conf.level=0.90)
+# ret <- bid.band(wins=fake.wins, price=price, n=n, conf.level=0.90)
 # #
 # (st <- Sys.time())
 # set.seed(112358)
@@ -426,12 +426,12 @@ plot.bid.band <- function(band, conf.level=NA, two.sided=FALSE, quantile.band=TR
 # for (irep in 1:NREP) {
 #   fake.bids <- matrix(data=runif(J*n), nrow=J)
 #   fake.wins <- apply(X=fake.bids, MARGIN=1, FUN=function(x) sort(x=x, decreasing=TRUE)[price])
-#   ret <- bid.CDF.band(wins=fake.wins, price=price, n=n, conf.level=1-ALPHA, plot.type=NULL)
+#   ret <- bid.band(wins=fake.wins, price=price, n=n, conf.level=1-ALPHA, plot.type=NULL)
 #   cover1L <- all(ret[,2]<=FB(ret[,1]))
 #   cover1U <- all(FB(ret[,1])<=ret[,3])
 #   cover2  <- all(ret[,4]<=FB(ret[,1]), FB(ret[,1])<=ret[,5])
 #   covers  <- rbind(covers, c(cover1L, cover1U, cover2))
-#   ret <- bid.CDF.band(wins=fake.wins, price=price, n=rep(n,J), conf.level=1-ALPHA, plot.type=NULL, NREP=1e3)
+#   ret <- bid.band(wins=fake.wins, price=price, n=rep(n,J), conf.level=1-ALPHA, plot.type=NULL, NREP=1e3)
 #   cover1L <- all(ret[,2]<=FB(ret[,1]))
 #   cover1U <- all(FB(ret[,1])<=ret[,3])
 #   cover2  <- all(ret[,4]<=FB(ret[,1]), FB(ret[,1])<=ret[,5])
@@ -459,11 +459,11 @@ plot.bid.band <- function(band, conf.level=NA, two.sided=FALSE, quantile.band=TR
 #   fake.bids2 <- matrix(data=runif(J2*n2), nrow=J2)
 #   fake.wins2 <- apply(X=fake.bids2, MARGIN=1, FUN=function(x) sort(x=x, decreasing=TRUE)[price])
 #   if (irep==1) {
-#     ret <- bid.CDF.band(wins=c(fake.wins1,fake.wins2), price=price, n=c(rep(n1,J1),rep(n2,J2)), conf.level=1-ALPHA, plot.type=NULL, NREP=beta.sim.rep, pt.beta.flag=pt.beta.flag, return.ALPHA.pts=TRUE)
+#     ret <- bid.band(wins=c(fake.wins1,fake.wins2), price=price, n=c(rep(n1,J1),rep(n2,J2)), conf.level=1-ALPHA, plot.type=NULL, NREP=beta.sim.rep, pt.beta.flag=pt.beta.flag, return.ALPHA.pts=TRUE)
 #     A.pts <- ret[1:3,'ALPHA.pts']
 #     print(sprintf("A.pts=%g",A.pts)) # original with pt.beta.flag=TRUE: [1] "A.pts=1.28295e-06" "A.pts=0.0108473"   "A.pts=1.28338e-06"
 #   } else {
-#     ret <- bid.CDF.band(wins=c(fake.wins1,fake.wins2), price=price, n=c(rep(n1,J1),rep(n2,J2)), conf.level=1-ALPHA, plot.type=NULL, NREP=beta.sim.rep, pt.beta.flag=pt.beta.flag, ALPHA.pts=A.pts)
+#     ret <- bid.band(wins=c(fake.wins1,fake.wins2), price=price, n=c(rep(n1,J1),rep(n2,J2)), conf.level=1-ALPHA, plot.type=NULL, NREP=beta.sim.rep, pt.beta.flag=pt.beta.flag, ALPHA.pts=A.pts)
 #   }
 #   cover1L <- all(ret[,2]<=FB(ret[,1]))
 #   cover1U <- all(FB(ret[,1])<=ret[,3])
@@ -478,6 +478,6 @@ plot.bid.band <- function(band, conf.level=NA, two.sided=FALSE, quantile.band=TR
 # J <- 10; n <- 4; price <- 2
 # fake.bids <- matrix(data=rnorm(J*n, mean=100, sd=10), nrow=J)
 # fake.wins <- apply(X=fake.bids, MARGIN=1, FUN=function(x) sort(x=x, decreasing=TRUE)[price])
-# ret <- bid.CDF.band(wins=fake.wins, price=price, n=n, conf.level=0.90)
+# ret <- bid.band(wins=fake.wins, price=price, n=n, conf.level=0.90)
 
 #EOF
