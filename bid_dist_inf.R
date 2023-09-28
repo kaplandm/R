@@ -355,7 +355,7 @@ bid.band <- function(wins, price, n, conf.level, plot.type='1s', plot.quantile=T
 # mar: margins argument for par()
 # ...: any other arguments to pass along to plot(), like xlim, yaxs, etc.
 plot.bid.band <- function(band, conf.level=NA, two.sided=FALSE, quantile.band=TRUE,
-                          main=NULL, plot.legend=TRUE, mar=c(5.1,4.1,6.1,2.1), ...) {
+                          main=NULL, plot.legend=TRUE, col=1, add=FALSE, mar=c(5.1,4.1,6.1,2.1), ...) {
   par(mar=mar)
   if (is.null(main)) {
     main <- sprintf('%s uniform confidence band%s\n',
@@ -367,41 +367,43 @@ plot.bid.band <- function(band, conf.level=NA, two.sided=FALSE, quantile.band=TR
   tau.lo2 <- band[,'UCB.lower.2s']
   tau.up1 <- band[,'UCB.upper.1s']
   tau.up2 <- band[,'UCB.upper.2s']
-  if (quantile.band) {
-    plot(x=range(tau.up1,tau.lo1,tau.up2,tau.lo2), y=range(wins), type='n',
-         xlab=expression(Quantile~(tau)), ylab="Bid value", xlim=0:1, main=main, xaxt='n', ...)
-    axis(side=1, at=0:4/4)
-  } else {
-    plot(x=range(wins), y=range(tau.up1,tau.lo1,tau.up2,tau.lo2), type='n',
-         xlab="Bid value", ylab="Bid CDF", ylim=0:1, main=main, yaxt='n', ...)
-    axis(side=2, at=0:4/4)
+  if (!add) { # create new plot
+    if (quantile.band) {
+      plot(x=range(tau.up1,tau.lo1,tau.up2,tau.lo2), y=range(wins), type='n',
+           xlab=expression(Quantile~(tau)), ylab="Bid value", xlim=0:1, main=main, xaxt='n', ...)
+      axis(side=1, at=0:4/4)
+    } else {
+      plot(x=range(wins), y=range(tau.up1,tau.lo1,tau.up2,tau.lo2), type='n',
+           xlab="Bid value", ylab="Bid CDF", ylim=0:1, main=main, yaxt='n', ...)
+      axis(side=2, at=0:4/4)
+    }
   }
   bignum <- 100*(max(wins)-min(wins))
   if (two.sided) {
     x <- c(wins[1]-bignum,wins[1],wins,max(wins)+bignum)
     y <- c(0,0,tau.lo2,max(tau.lo2))
     if (quantile.band) { z <- y; y <- x; x <- z }
-    lines(x=x, y=y, type='s', lwd=2, lty=2, col=1)
+    lines(x=x, y=y, type='s', lwd=2, lty=2, col=col)
     x <- c(wins[1]-bignum,wins,max(wins),max(wins)+bignum)
     y <- c(min(tau.up2),tau.up2,1,1)
     if (quantile.band) { z <- y; y <- x; x <- z }
-    lines(x=x, y=y, type='S', lwd=2, lty=2, col=1)
-    if (plot.legend) legend(ifelse(quantile.band,'topleft','bottomright'), legend='Two-sided', lty=2, lwd=2)
+    lines(x=x, y=y, type='S', lwd=2, lty=2, col=col)
+    if (plot.legend) legend(ifelse(quantile.band,'topleft','bottomright'), legend='Two-sided', lty=2, lwd=2, col=col)
   } else {
     x <- c(wins[1]-bignum,wins[1],wins,max(wins)+bignum)
     y <- c(0,0,tau.lo1,max(tau.lo1))
     if (quantile.band) { z <- y; y <- x; x <- z }
-    lines(x=x, y=y, type='s', lwd=2, lty=2, col=1)
+    lines(x=x, y=y, type='s', lwd=2, lty=2, col=col)
     x <- c(wins[1]-bignum,wins,max(wins),max(wins)+bignum)
     y <- c(min(tau.up1),tau.up1,1,1)
     if (quantile.band) { z <- y; y <- x; x <- z }
-    lines(x=x, y=y, type='S', lwd=2, lty=2, col=1)
+    lines(x=x, y=y, type='S', lwd=2, lty=2, col=col)
     if (plot.legend) {
-      tmp <- legend('top', plot=FALSE, lty=2, lwd=2, ncol=2,
+      tmp <- legend('top', plot=FALSE, lty=2, lwd=2, col=col, ncol=2,
                     legend=c('Lower 1-sided','Upper 1-sided'))
       newxy <- c(tmp$rect$left, tmp$rect$top + 1.01*tmp$rect$h)
       legend(x=newxy[1], y=newxy[2], legend=c('Lower 1-sided','Upper 1-sided'),
-             lty=2, lwd=2, ncol=2, xpd=NA)
+             lty=2, lwd=2, col=col, ncol=2, xpd=NA)
     }
   }
 }
