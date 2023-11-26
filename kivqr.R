@@ -30,7 +30,8 @@ if (!success) {
 #   do *not* include one in X.exog or Z.excl
 # ! careful of the order of coefficients: first endogenous,
 #   then exogenous, then intercept
-kivqr <- function(tau,Y,X.endog=NULL,X.exog=NULL,Z.excl=NULL,h=0,k=NULL,b.init=NULL) {
+# LIMLadj: 
+kivqr <- function(tau, Y, X.endog=NULL, X.exog=NULL, Z.excl=NULL, h=0, k=NULL, b.init=NULL, LIMLadj=TRUE) {
   # Parse/set additional arguments
   if (is.null(Y) || is.null(X.endog) || is.null(Z.excl)) stop("Must specify Y (vector of outcome observations), X.endog (matrix of endogenous regressor observations, n rows), and Z.excl (matrix of excluded instruments for X.endog, also n rows).")
   # make any vectors into n-by-1 matrix (and any data.frame into matrix type)
@@ -61,10 +62,13 @@ kivqr <- function(tau,Y,X.endog=NULL,X.exog=NULL,Z.excl=NULL,h=0,k=NULL,b.init=N
     # 
     # sanity check: set to 1 if clearly too low or too high
     tmp <- ncol(cbind(Z.excl))
-    if (is.na(kLIML) || kLIML<0.99) {
+    if (is.na(kLIML)) {
+      warning('LIML k NA; using k=1 instead.')
+      kLIML <- 1
+    } else if (LIMLadj && kLIML<0.99) {
       warning('LIML k NA or too low; using k=1 instead.')
       kLIML <- 1
-    } else if (kLIML>1+3*(max(c(n/(n-tmp+2), 1+tmp/(n-tmp)))-1)) { #max(bias-adjusted, JIVE)
+    } else if (LIMLadj && kLIML>1+3*(max(c(n/(n-tmp+2), 1+tmp/(n-tmp)))-1)) { #max(bias-adjusted, JIVE)
       warning('LIML k too big; using k=1 instead.')
       kLIML <- 1
     }
