@@ -17,7 +17,7 @@
 # Other functions are just helper functions, though may also be called externally if helpful.
 #
 # Author (original): David M. Kaplan
-# First version: July 8, 2013; last update 17may2021 (updated URLs)
+# First version: July 8, 2013; last update Oct. 2024 (improved GK.dist.inf.rej.2s.r when duplicate sample values)
 # Implementation of Dirichlet-based distributional inference
 #   1-sample and 2-sample
 #   1-sided  and 2-sided
@@ -115,7 +115,6 @@ GK.dist.inf <- function(X=NULL,Y=NULL,alpha=0.05,PLOT.FLAG=FALSE,tt=NULL,ttY=NUL
   if (is.null(Y)) { #1-sample
     if (is.null(alpha)) {
       if (is.null(H0.pval)) { stop("H0.pval must contain vector of null hypothesis CDF values (evaluated at the observed X values).") }
-      # if (ONESIDED!=0) stop("Only ONESIDED=0 is currently supported for one-sample p-values.  (For p-values below 0.15 or so, simply dividing the two-sided p-value by two is a good approximation (within a couple percentage points)--and of course check that the direction (upper vs. lower) is correct.  A good sanity check would be to plot a graph of the two-sided uniform confidence band with alpha=p, by using PLOT.FLAG=TRUE, and then plotting the null hypothesis CDF on top.")
       if (length(X)!=length(H0.pval)) { stop("X and H0.pval must be the same length.") }
       return(GK.dist.inf.1s.pval(X=sort(X),H0=sort(H0.pval),ONESIDED=ONESIDED)) #,VERBOSE=VERBOSE,MIN.DRAWS=MIN.DRAWS))
     } else {
@@ -169,243 +168,242 @@ GK.dist.inf.1s <-
   function(X=NULL,ALPHA=0.05,PLOT.FLAG=FALSE,tt=NULL,FRAC=1,
            ONESIDED=0,PRETEST.FLAG=FALSE,STEPDOWN.FLAG=FALSE,
            H0.invCDF.fn=NULL,VERBOSE=FALSE,MIN.DRAWS=1e4,PARALLEL=1) {
-  if (is.null(X)) { stop("X must contain vector of observed data.") }
-  X <- sort(X)
-  n <- length(X)
-  if (is.null(tt)) { tt <- array(1/2,dim=c(n,2)) } else { stop("tt must be NULL (for now).") }
-  if (FRAC!=1) { stop("FRAC must equal 1 (for now).") }
-  if (is.null(H0.invCDF.fn) && (PRETEST.FLAG || STEPDOWN.FLAG)) stop("Must provide quantile function in argument H0.invCDF.fn in order to use PRETEST.FLAG=TRUE or STEPDOWN.FLAG=TRUE.")
-  if (PRETEST.FLAG || STEPDOWN.FLAG) {
-    oldseed <- NULL
-    if (exists(".Random.seed",.GlobalEnv)) {  #.Random.seed #restore state at end
-      oldseed <- get(".Random.seed",.GlobalEnv)
-    }
-    on.exit(if (!is.null(oldseed)) { assign(".Random.seed", oldseed, .GlobalEnv) }, add=TRUE)
-    if (PARALLEL>1) warning("PARALLEL not currently supported for one-sample power improvements.")
-  }
-  alpha.tilde <- GK.dist.1s.alpha.tilde(n,ifelse(ONESIDED!=0,2*ALPHA,ALPHA))
-  CIs <- GK.dist.inf.1s.CIs(n=n,alpha.tilde=alpha.tilde,FRAC=FRAC,tt=tt)
-  ret <- NULL #data.frame to be returned
-  if (PRETEST.FLAG || STEPDOWN.FLAG) {
-    qs <- c(CIs[,1],CIs[,2])
-    suppressWarnings(H0.qs <- apply(matrix(qs,ncol=1),1,H0.invCDF.fn)) #warning() if Inf, when ONESIDED!=0
-    tmp <- character(2*n);  tmp[1:n] <- ">=";  tmp[-(1:n)] <- "<="
-    ret <- data.frame(OSind=c(1:n,1:n),Lstat=c(X,X),
-                      reject=c(X<H0.qs[1:n],X>H0.qs[-(1:n)]),
-                      quantile=c(CIs[,1],CIs[,2]),H0.dir=tmp,H0.val=H0.qs,
-                      pre.rej=F,
-                      ONEs=c(rep.int(-1,n),rep.int(1,n)))
-    if (ONESIDED>0) ret <- ret[1:n,] else if (ONESIDED<0) ret <- ret[-(1:n),]
-    rownames(ret) <- 1:dim(ret)[1]
-    qs <- ret$quantile;  H0.qs <- NULL #use ret$H0.val instead
-  } else {
-    if (ONESIDED>0) CIs[,2] <- 1 else if (ONESIDED<0) CIs[,1] <- 0
-    ret <- list(CIs=CIs,X=X)
-    if (PLOT.FLAG) GK.dist.inf.plot.1s(ret)
-    return(ret)
-  }
-  cat("Reminder: you may get confidence bands by setting PRETEST.FLAG=FALSE and STEPDOWN.FLAG=FALSE.\n",file="")
-  N.BLOCKS <- NULL
-  if (PRETEST.FLAG) { #set ret$pre.rej  (Note: already checked ONESIDED!=0)
-    # Calibrate pre-test
-    #setup
-    N.BLOCKS <- 1;  BLOCK.SIZE <- MIN.DRAWS
-    fail <- tryCatch(expr={Bs <- quantile.inf.betas(u=1:n/(n+1),n=n,reps=BLOCK.SIZE);F},
-                     error=function(err){warning(err$message);TRUE})
-    while (fail && BLOCK.SIZE>1) {
-      N.BLOCKS <- N.BLOCKS*2
-      BLOCK.SIZE <- ceiling(MIN.DRAWS/N.BLOCKS)
-      fail <- tryCatch(expr={quantile.inf.betas(u=1:n/(n+1),n=n,reps=BLOCK.SIZE);F},
-                       error=function(err)TRUE)
-    }
-    if (fail && BLOCK.SIZE<=1) {
-      warning("Not enough memory for Dirichlet simulation; skipping pretest and returning.")
-      return(ret[,-dim(ret)[2]])
-    }
-    pre.alpha <- ALPHA/log(log(max(15,n)))
-    #iterate: guess alpha.tilde, check FWER of pre-test
-    pre.FWER <- 0;  PRE.REL.TOL <- 0.1;  TILDE.FACTOR <- 1.5
-    pre.OS <- pre.qs.ind <- NULL
-    tmp.alpha.tilde <- GK.dist.1s.alpha.tilde(n,2*pre.alpha)/TILDE.FACTOR
-    PREV.TOO.HIGH <- FALSE
-    while (abs(pre.FWER-pre.alpha)/pre.alpha > PRE.REL.TOL) {
-      if (pre.FWER>pre.alpha) {
-        tmp.alpha.tilde <- tmp.alpha.tilde/TILDE.FACTOR 
-        PREV.TOO.HIGH <- TRUE
-      } else {
-        if (PREV.TOO.HIGH) TILDE.FACTOR <- 1+(TILDE.FACTOR-1)/2
-        PREV.TOO.HIGH <- FALSE
-        tmp.alpha.tilde <- tmp.alpha.tilde*TILDE.FACTOR
-        if (tmp.alpha.tilde>2*pre.alpha) break
+    if (is.null(X)) { stop("X must contain vector of observed data.") }
+    X <- sort(X)
+    n <- length(X)
+    if (is.null(tt)) { tt <- array(1/2,dim=c(n,2)) } else { stop("tt must be NULL (for now).") }
+    if (FRAC!=1) { stop("FRAC must equal 1 (for now).") }
+    if (is.null(H0.invCDF.fn) && (PRETEST.FLAG || STEPDOWN.FLAG)) stop("Must provide quantile function in argument H0.invCDF.fn in order to use PRETEST.FLAG=TRUE or STEPDOWN.FLAG=TRUE.")
+    if (PRETEST.FLAG || STEPDOWN.FLAG) {
+      oldseed <- NULL
+      if (exists(".Random.seed",.GlobalEnv)) {  #.Random.seed #restore state at end
+        oldseed <- get(".Random.seed",.GlobalEnv)
       }
-      tmp.CIs <- GK.dist.inf.1s.CIs(n=n,alpha.tilde=tmp.alpha.tilde)[,1+(ONESIDED>0)]
-      suppressWarnings(tmp <- ifelse(ONESIDED>0,min(which(qs>=min(tmp.CIs))),max(which(qs<=max(tmp.CIs))))) #ok if +/-Inf, so suppress warning
-      if (is.infinite(tmp)) {
-        pre.FWER <- 0;  pre.qs.ind <- pre.OS <- NULL
-      } else {
-        if (ONESIDED>0) pre.qs.ind <- tmp:n else pre.qs.ind <- 1:tmp
-        pre.qs <- qs[pre.qs.ind]
-        pre.OS <- rep.int(NA,length(pre.qs))
-        for (i in 1:length(pre.qs)) {
-          if (ONESIDED>0) pre.OS[i] <- max(which(tmp.CIs<=pre.qs[i])) else pre.OS[i] <- min(which(tmp.CIs>=pre.qs[i]))
+      on.exit(if (!is.null(oldseed)) { assign(".Random.seed", oldseed, .GlobalEnv) }, add=TRUE)
+      if (PARALLEL>1) warning("PARALLEL not currently supported for one-sample power improvements.")
+    }
+    alpha.tilde <- GK.dist.1s.alpha.tilde(n,ifelse(ONESIDED!=0,2*ALPHA,ALPHA))
+    CIs <- GK.dist.inf.1s.CIs(n=n,alpha.tilde=alpha.tilde,FRAC=FRAC,tt=tt)
+    ret <- NULL #data.frame to be returned
+    if (PRETEST.FLAG || STEPDOWN.FLAG) {
+      qs <- c(CIs[,1],CIs[,2])
+      suppressWarnings(H0.qs <- apply(matrix(qs,ncol=1),1,H0.invCDF.fn)) #warning() if Inf, when ONESIDED!=0
+      tmp <- character(2*n);  tmp[1:n] <- ">=";  tmp[-(1:n)] <- "<="
+      ret <- data.frame(OSind=c(1:n,1:n),Lstat=c(X,X),
+                        reject=c(X<H0.qs[1:n],X>H0.qs[-(1:n)]),
+                        quantile=c(CIs[,1],CIs[,2]),H0.dir=tmp,H0.val=H0.qs,
+                        pre.rej=F,
+                        ONEs=c(rep.int(-1,n),rep.int(1,n)))
+      if (ONESIDED>0) ret <- ret[1:n,] else if (ONESIDED<0) ret <- ret[-(1:n),]
+      rownames(ret) <- 1:dim(ret)[1]
+      qs <- ret$quantile;  H0.qs <- NULL #use ret$H0.val instead
+    } else {
+      if (ONESIDED>0) CIs[,2] <- 1 else if (ONESIDED<0) CIs[,1] <- 0
+      ret <- list(CIs=CIs,X=X)
+      if (PLOT.FLAG) GK.dist.inf.plot.1s(ret)
+      return(ret)
+    }
+    cat("Reminder: you may get confidence bands by setting PRETEST.FLAG=FALSE and STEPDOWN.FLAG=FALSE.\n",file="")
+    N.BLOCKS <- NULL
+    if (PRETEST.FLAG) { #set ret$pre.rej  (Note: already checked ONESIDED!=0)
+      # Calibrate pre-test
+      # setup
+      N.BLOCKS <- 1;  BLOCK.SIZE <- MIN.DRAWS
+      fail <- tryCatch(expr={Bs <- quantile.inf.betas(u=1:n/(n+1),n=n,reps=BLOCK.SIZE);F},
+                       error=function(err){warning(err$message);TRUE})
+      while (fail && BLOCK.SIZE>1) {
+        N.BLOCKS <- N.BLOCKS*2
+        BLOCK.SIZE <- ceiling(MIN.DRAWS/N.BLOCKS)
+        fail <- tryCatch(expr={quantile.inf.betas(u=1:n/(n+1),n=n,reps=BLOCK.SIZE);F},
+                         error=function(err)TRUE)
+      }
+      if (fail && BLOCK.SIZE<=1) {
+        warning("Not enough memory for Dirichlet simulation; skipping pretest and returning.")
+        return(ret[,-dim(ret)[2]])
+      }
+      pre.alpha <- ALPHA/log(log(max(15,n)))
+      #iterate: guess alpha.tilde, check FWER of pre-test
+      pre.FWER <- 0;  PRE.REL.TOL <- 0.1;  TILDE.FACTOR <- 1.5
+      pre.OS <- pre.qs.ind <- NULL
+      tmp.alpha.tilde <- GK.dist.1s.alpha.tilde(n,2*pre.alpha)/TILDE.FACTOR
+      PREV.TOO.HIGH <- FALSE
+      while (abs(pre.FWER-pre.alpha)/pre.alpha > PRE.REL.TOL) {
+        if (pre.FWER>pre.alpha) {
+          tmp.alpha.tilde <- tmp.alpha.tilde/TILDE.FACTOR 
+          PREV.TOO.HIGH <- TRUE
+        } else {
+          if (PREV.TOO.HIGH) TILDE.FACTOR <- 1+(TILDE.FACTOR-1)/2
+          PREV.TOO.HIGH <- FALSE
+          tmp.alpha.tilde <- tmp.alpha.tilde*TILDE.FACTOR
+          if (tmp.alpha.tilde>2*pre.alpha) break
         }
-        if (N.BLOCKS>1) set.seed(112358)
-        blk.RPs <- rep.int(NA,N.BLOCKS)
-        for (iB in 1:N.BLOCKS) {
-          if (N.BLOCKS>1) Bs <- quantile.inf.betas(u=1:n/(n+1),n=n,reps=BLOCK.SIZE)
-          n.rej <- 0
-          for (i in 1:BLOCK.SIZE) n.rej <- n.rej + max(ONESIDED*Bs[i,pre.OS]>ONESIDED*pre.qs)
-          blk.RPs[iB] <- n.rej/BLOCK.SIZE #percentage of rows/draws where *any* rejection
+        tmp.CIs <- GK.dist.inf.1s.CIs(n=n,alpha.tilde=tmp.alpha.tilde)[,1+(ONESIDED>0)]
+        suppressWarnings(tmp <- ifelse(ONESIDED>0,min(which(qs>=min(tmp.CIs))),max(which(qs<=max(tmp.CIs))))) #ok if +/-Inf, so suppress warning
+        if (is.infinite(tmp)) {
+          pre.FWER <- 0;  pre.qs.ind <- pre.OS <- NULL
+        } else {
+          if (ONESIDED>0) pre.qs.ind <- tmp:n else pre.qs.ind <- 1:tmp
+          pre.qs <- qs[pre.qs.ind]
+          pre.OS <- rep.int(NA,length(pre.qs))
+          for (i in 1:length(pre.qs)) {
+            if (ONESIDED>0) pre.OS[i] <- max(which(tmp.CIs<=pre.qs[i])) else pre.OS[i] <- min(which(tmp.CIs>=pre.qs[i]))
+          }
+          if (N.BLOCKS>1) set.seed(112358)
+          blk.RPs <- rep.int(NA,N.BLOCKS)
+          for (iB in 1:N.BLOCKS) {
+            if (N.BLOCKS>1) Bs <- quantile.inf.betas(u=1:n/(n+1),n=n,reps=BLOCK.SIZE)
+            n.rej <- 0
+            for (i in 1:BLOCK.SIZE) n.rej <- n.rej + max(ONESIDED*Bs[i,pre.OS]>ONESIDED*pre.qs)
+            blk.RPs[iB] <- n.rej/BLOCK.SIZE #percentage of rows/draws where *any* rejection
+          }
+          pre.FWER <- mean(blk.RPs)
         }
-        pre.FWER <- mean(blk.RPs)
+      }
+      if (N.BLOCKS>1) rm(Bs)
+      # Run pre-test using pre.OS and pre.qs.ind
+      ret$pre.rej[pre.qs.ind] <- (ONESIDED*X[pre.OS]>ONESIDED*ret$H0.val[pre.qs.ind])
+    }
+    # Now, step down
+    n.newrejs <- sum(ret$reject | ret$pre.rej)
+    if (n.newrejs==0) {cat("No initial rejections, so no power improvement possible.\n");suppressWarnings(rm(Bs));return(ret[,-dim(ret)[2]])}
+    if (!STEPDOWN.FLAG && sum(ret$pre.rej)==0) {cat("No pre-test rejections, so no power improvement possible.\n");suppressWarnings(rm(Bs));return(ret[,-dim(ret)[2]])}
+    if (sum(ret$reject)==n) {cat("n rejections, so no need to step down.\n");suppressWarnings(rm(Bs));return(ret[,-dim(ret)[2]])}
+    cat(sprintf("Re-calibrating to improve power. (This may take some time; you may disable all power improvements by setting STEPDOWN.FLAG=FALSE and PRETEST.FLAG=FALSE.)\n"),file="")
+    set.seed(112358) #for replicability
+    # determine blocksize/#blocks
+    if (is.null(N.BLOCKS)) {
+      N.BLOCKS <- 1;  BLOCK.SIZE <- MIN.DRAWS
+      fail <- tryCatch(expr={Bs <- quantile.inf.betas(u=1:n/(n+1),n=n,reps=BLOCK.SIZE);F},
+                       error=function(err){warning(err$message);TRUE})
+      while (fail && BLOCK.SIZE>1) {
+        N.BLOCKS <- N.BLOCKS*2
+        BLOCK.SIZE <- ceiling(MIN.DRAWS/N.BLOCKS)
+        fail <- tryCatch(expr={quantile.inf.betas(u=1:n/(n+1),n=n,reps=BLOCK.SIZE);F},
+                         error=function(err)TRUE)
+      }
+      if (fail && BLOCK.SIZE<=1) {
+        warning("Not enough memory for Dirichlet simulation; skipping stepdown and returning.")
+        return(ret[,-dim(ret)[2]])
       }
     }
-    if (N.BLOCKS>1) rm(Bs)
-    # Run pre-test using pre.OS and pre.qs.ind
-    ret$pre.rej[pre.qs.ind] <- (ONESIDED*X[pre.OS]>ONESIDED*ret$H0.val[pre.qs.ind])
-  }
-  # Now, step down
-  n.newrejs <- sum(ret$reject | ret$pre.rej)
-  if (n.newrejs==0) {cat("No initial rejections, so no power improvement possible.\n");suppressWarnings(rm(Bs));return(ret[,-dim(ret)[2]])}
-  if (!STEPDOWN.FLAG && sum(ret$pre.rej)==0) {cat("No pre-test rejections, so no power improvement possible.\n");suppressWarnings(rm(Bs));return(ret[,-dim(ret)[2]])}
-  if (sum(ret$reject)==n) {cat("n rejections, so no need to step down.\n");suppressWarnings(rm(Bs));return(ret[,-dim(ret)[2]])}
-  cat(sprintf("Re-calibrating to improve power. (This may take some time; you may disable all power improvements by setting STEPDOWN.FLAG=FALSE and PRETEST.FLAG=FALSE.)\n"),file="")
-  set.seed(112358) #for replicability
-  # determine blocksize/#blocks
-  if (is.null(N.BLOCKS)) {
-    N.BLOCKS <- 1;  BLOCK.SIZE <- MIN.DRAWS
-    fail <- tryCatch(expr={Bs <- quantile.inf.betas(u=1:n/(n+1),n=n,reps=BLOCK.SIZE);F},
-                     error=function(err){warning(err$message);TRUE})
-    while (fail && BLOCK.SIZE>1) {
-      N.BLOCKS <- N.BLOCKS*2
-      BLOCK.SIZE <- ceiling(MIN.DRAWS/N.BLOCKS)
-      fail <- tryCatch(expr={quantile.inf.betas(u=1:n/(n+1),n=n,reps=BLOCK.SIZE);F},
-                       error=function(err)TRUE)
+    SWITCH.N <- 20
+    if (n>SWITCH.N) {
+      skip <- tryCatch({RPmat <- matrix(0.1,nrow=n,ncol=sum(!ret$reject));FALSE},
+                       error=function(err) { warning(sprintf("Skipping power improvement: %s.",err$message)); TRUE},
+                       warning=function(w) { warning(sprintf("Skipping power improvement: %s.",w$message)); TRUE })
+      if (skip) return(ret[,-dim(ret)[2]])
     }
-    if (fail && BLOCK.SIZE<=1) {
-      warning("Not enough memory for Dirichlet simulation; skipping stepdown and returning.")
-      return(ret[,-dim(ret)[2]])
-    }
-  }
-  SWITCH.N <- 20
-  if (n>SWITCH.N) {
-    skip <- tryCatch({RPmat <- matrix(0.1,nrow=n,ncol=sum(!ret$reject));FALSE},
-                     error=function(err) { warning(sprintf("Skipping power improvement: %s.",err$message)); TRUE},
-             warning=function(w) { warning(sprintf("Skipping power improvement: %s.",w$message)); TRUE })
-    if (skip) return(ret[,-dim(ret)[2]])
-  }
-  if (n>100 && N.BLOCKS>1) warning("This may take a very long time to compute; try freeing as much RAM as you can and re-running (if you haven't already).")
-  rem.ind <- !(ret$reject | ret$pre.rej)
-  if (!STEPDOWN.FLAG) rem.ind <- !ret$pre.rej
-  rem.ONE <- ret$ONEs[rem.ind]
-  rem.qs <- qs[rem.ind]
-  RPmat <- NULL #for integer-OS method
-  if (n>SWITCH.N) {
-    RPmat <- matrix(NA,nrow=n,ncol=length(rem.qs))
-    for (i in 1:dim(RPmat)[1]) {
-      for (j in 1:dim(RPmat)[2]) {
-        RPmat[i,j] <- pbeta(rem.qs[j],i,n+1-i,lower.tail=rem.ONE[j]<0)
-      }
-    }
-  }
-  n.rej.init <- sum(ret$reject)
-  while (n.newrejs>0 && (!STEPDOWN.FLAG || sum(!(ret$reject | ret$pre.rej))>0)) {
+    if (n>100 && N.BLOCKS>1) warning("This may take a very long time to compute; try freeing as much RAM as you can and re-running (if you haven't already).")
     rem.ind <- !(ret$reject | ret$pre.rej)
-    if (!STEPDOWN.FLAG) rem.ind <- !ret$pre.rej #only look at pre-test
+    if (!STEPDOWN.FLAG) rem.ind <- !ret$pre.rej
     rem.ONE <- ret$ONEs[rem.ind]
     rem.qs <- qs[rem.ind]
-    if (n<=SWITCH.N) { #use L-stat
-      a.to.CIu.fn <- function(p,n,a,ONESIDED) {
-        us <- rep.int(NA,length(p))
-        for (i in 1:length(us)) {
-          if (ONESIDED[i]<0) { 
-            us[i] <- quantile.inf.CIuh(p=p[i],n=n,a=a,APPROX=FALSE)
+    RPmat <- NULL #for integer-OS method
+    if (n>SWITCH.N) {
+      RPmat <- matrix(NA,nrow=n,ncol=length(rem.qs))
+      for (i in 1:dim(RPmat)[1]) {
+        for (j in 1:dim(RPmat)[2]) {
+          RPmat[i,j] <- pbeta(rem.qs[j],i,n+1-i,lower.tail=rem.ONE[j]<0)
+        }
+      }
+    }
+    n.rej.init <- sum(ret$reject)
+    while (n.newrejs>0 && (!STEPDOWN.FLAG || sum(!(ret$reject | ret$pre.rej))>0)) {
+      rem.ind <- !(ret$reject | ret$pre.rej)
+      if (!STEPDOWN.FLAG) rem.ind <- !ret$pre.rej #only look at pre-test
+      rem.ONE <- ret$ONEs[rem.ind]
+      rem.qs <- qs[rem.ind]
+      if (n<=SWITCH.N) { #use L-stat
+        a.to.CIu.fn <- function(p,n,a,ONESIDED) {
+          us <- rep.int(NA,length(p))
+          for (i in 1:length(us)) {
+            if (ONESIDED[i]<0) { 
+              us[i] <- quantile.inf.CIuh(p=p[i],n=n,a=a,APPROX=FALSE)
+            } else {
+              us[i] <- quantile.inf.CIul(p=p[i],n=n,a=a,APPROX=FALSE)
+            }
+          }
+          return(pmax(1/(n+1)+.Machine$double.eps,pmin(n/(n+1)-.Machine$double.eps,us)))
+        }
+        cal.fn <- function(a) { #similar to quantile_inf.R::quantile.inf.calibrate()
+          us <- a.to.CIu.fn(rem.qs,n,a,rem.ONE)
+          blk.RPs <- rep.int(NA,N.BLOCKS)
+          set.seed(112358)
+          for (iB in 1:N.BLOCKS) {
+            Bs <- quantile.inf.betas(u=sort(us),n=n,reps=BLOCK.SIZE)
+            Bs[,order(us)] <- Bs
+            n.rej <- 0
+            for (i in 1:BLOCK.SIZE) {
+              n.rej <- n.rej + max(rem.ONE*Bs[i,]>rem.ONE*rem.qs)
+            }
+            blk.RPs[iB] <- n.rej/BLOCK.SIZE #percentage of rows/draws where *any* rejection
+          }
+          return(mean(blk.RPs)-ALPHA) #mean is linear fn, so take mean of means
+        }
+        ALPHAtilde <- tryCatch(uniroot(f=cal.fn, interval=c(.Machine$double.eps,ALPHA), f.lower=-ALPHA, tol=0.0001)$root,error=function(err) { if (err$message=="f() values at end points not of opposite sign") ALPHA else stop(err) })
+        end.u <- a.to.CIu.fn(rem.qs,n,ALPHAtilde,rem.ONE)
+        ret$OSind[rem.ind] <- end.u*(n+1)
+        Lstats <- rep.int(NA,length(end.u))
+        for (i in 1:length(end.u)) Lstats[i] <- quantile.inf.interp(X=X,u=end.u[i])
+        ret$Lstat[rem.ind] <- Lstats
+        ret$reject[rem.ind] <- ((rem.ONE*Lstats)>(rem.ONE*ret$H0.val[rem.ind]))
+        n.newrejs <- sum(ret$reject[rem.ind])
+      } else { #stick to order statistics
+        rem.OSind <- ret$OSind[rem.ind]
+        rejs <- rep.int(NA,BLOCK.SIZE*N.BLOCKS)
+        if (N.BLOCKS>1) set.seed(112358)
+        for (kB in 1:N.BLOCKS) {
+          if (N.BLOCKS>1) Bs <- quantile.inf.betas(u=(1:n)/(n+1),n=n,reps=BLOCK.SIZE)
+          for (iB in 1:BLOCK.SIZE) {
+            rejs[(kB-1)*BLOCK.SIZE+iB] <- max((rem.ONE*Bs[iB,rem.OSind])>(rem.ONE*rem.qs))
+          }
+        }
+        while (mean(rejs)<=ALPHA) { #keep increasing \tilde\alpha's as long as FWER<=ALPHA
+          # find smallest aTilde incr from RPmat
+          ats <- RPmat[cbind(pmax(1,pmin(dim(RPmat)[1],rem.OSind+rem.ONE)),
+                             1:dim(RPmat)[2])] + 
+            (rem.OSind==n & rem.ONE>0) + (rem.OSind==1 & rem.ONE<0) #make sure don't go out of bounds
+          chg.ind <- which.min(ats)
+          if (ats[chg.ind]>1) break
+          # compute FWER, mean(rejs)
+          tmp1 <- -rem.ONE[chg.ind];  tmpq <- rem.qs[chg.ind]
+          newrejs <- rep.int(NA,BLOCK.SIZE*N.BLOCKS)
+          if (N.BLOCKS==1) {
+            newrejs <- ((tmp1*Bs[,rem.OSind[chg.ind]+rem.ONE[chg.ind]]) < (tmp1*tmpq)) & 
+              ((tmp1*tmpq) <= (tmp1*Bs[,rem.OSind[chg.ind]]))
           } else {
-            us[i] <- quantile.inf.CIul(p=p[i],n=n,a=a,APPROX=FALSE)
+            if (N.BLOCKS>1) set.seed(112358)
+            for (kB in 1:N.BLOCKS) { #only draw the 2 relevant order statistics
+              if (N.BLOCKS>1) Bs <- quantile.inf.betas(u=(1:n)/(n+1),n=n,reps=BLOCK.SIZE)
+              Us <- c(rem.OSind[chg.ind]+rem.ONE[chg.ind],rem.OSind[chg.ind])/(n+1)
+              Bs <- quantile.inf.betas(u=sort(Us),n=n,reps=BLOCK.SIZE)
+              if (rem.ONE[chg.ind]>0) Bs <- Bs[,2:1] #to undo sort(Us)
+              newrejs[((kB-1)*BLOCK.SIZE+1):(kB*BLOCK.SIZE)] <- 
+                ((tmp1*Bs[,1]) < (tmp1*tmpq)) & ((tmp1*tmpq) <= (tmp1*Bs[,2]))
+            }
           }
+          rejs <- pmax(rejs,newrejs)
+          if (mean(rejs)<=ALPHA) { #update ret
+            rem.OSind[chg.ind] <- rem.OSind[chg.ind]+rem.ONE[chg.ind]
+            ret$OSind[rem.ind] <- rem.OSind
+          } else break
         }
-        # return(pmax(1/(n+1),pmin(n/(n+1),us)))
-        return(pmax(1/(n+1)+.Machine$double.eps,pmin(n/(n+1)-.Machine$double.eps,us)))
+        # update Lstat, reject, n.newrejs, and RPmat for next iteration
+        ret$Lstat[rem.ind] <- X[ret$OSind[rem.ind]]
+        ret$reject[rem.ind] <- ((rem.ONE*ret$Lstat[rem.ind])>(rem.ONE*ret$H0.val[rem.ind]))
+        RPmat <- RPmat[,!ret$reject[rem.ind]]
+        if (sum(!ret$reject[rem.ind])<=1) RPmat <- matrix(RPmat,ncol=1)
+        n.newrejs <- sum(ret$reject[rem.ind])
       }
-      cal.fn <- function(a) { #similar to quantile_inf.R::quantile.inf.calibrate()
-        us <- a.to.CIu.fn(rem.qs,n,a,rem.ONE)
-        blk.RPs <- rep.int(NA,N.BLOCKS)
-        set.seed(112358)
-        for (iB in 1:N.BLOCKS) {
-          Bs <- quantile.inf.betas(u=sort(us),n=n,reps=BLOCK.SIZE)
-          Bs[,order(us)] <- Bs
-          n.rej <- 0
-          for (i in 1:BLOCK.SIZE) {
-            n.rej <- n.rej + max(rem.ONE*Bs[i,]>rem.ONE*rem.qs)
-          }
-          blk.RPs[iB] <- n.rej/BLOCK.SIZE #percentage of rows/draws where *any* rejection
-        }
-        return(mean(blk.RPs)-ALPHA) #mean is linear fn, so take mean of means
+      if (!STEPDOWN.FLAG) {
+        cat(sprintf("%d new rejection(s).\n",sum(ret$reject)-n.rej.init),file="")
+        break #only go through once when PRETEST but not STEPDOWN
       }
-      ALPHAtilde <- tryCatch(uniroot(f=cal.fn, interval=c(.Machine$double.eps,ALPHA), f.lower=-ALPHA, tol=0.0001)$root,error=function(err) { if (err$message=="f() values at end points not of opposite sign") ALPHA else stop(err) })
-      end.u <- a.to.CIu.fn(rem.qs,n,ALPHAtilde,rem.ONE)
-      ret$OSind[rem.ind] <- end.u*(n+1)
-      Lstats <- rep.int(NA,length(end.u))
-      for (i in 1:length(end.u)) Lstats[i] <- quantile.inf.interp(X=X,u=end.u[i])
-      ret$Lstat[rem.ind] <- Lstats
-      ret$reject[rem.ind] <- ((rem.ONE*Lstats)>(rem.ONE*ret$H0.val[rem.ind]))
-      n.newrejs <- sum(ret$reject[rem.ind])
-    } else { #stick to order statistics
-      rem.OSind <- ret$OSind[rem.ind]
-      rejs <- rep.int(NA,BLOCK.SIZE*N.BLOCKS)
-      if (N.BLOCKS>1) set.seed(112358)
-      for (kB in 1:N.BLOCKS) {
-        if (N.BLOCKS>1) Bs <- quantile.inf.betas(u=(1:n)/(n+1),n=n,reps=BLOCK.SIZE)
-        for (iB in 1:BLOCK.SIZE) {
-          rejs[(kB-1)*BLOCK.SIZE+iB] <- max((rem.ONE*Bs[iB,rem.OSind])>(rem.ONE*rem.qs))
-        }
-      }
-      while (mean(rejs)<=ALPHA) { #keep increasing \tilde\alpha's as long as FWER<=ALPHA
-        # FIND SMALLEST aTilde INCR FROM RPmat
-        ats <- RPmat[cbind(pmax(1,pmin(dim(RPmat)[1],rem.OSind+rem.ONE)),
-                           1:dim(RPmat)[2])] + 
-          (rem.OSind==n & rem.ONE>0) + (rem.OSind==1 & rem.ONE<0) #make sure don't go out of bounds
-        chg.ind <- which.min(ats)
-        if (ats[chg.ind]>1) break
-        # COMPUTE FWER, mean(rejs)
-        tmp1 <- -rem.ONE[chg.ind];  tmpq <- rem.qs[chg.ind]
-        newrejs <- rep.int(NA,BLOCK.SIZE*N.BLOCKS)
-        if (N.BLOCKS==1) {
-          newrejs <- ((tmp1*Bs[,rem.OSind[chg.ind]+rem.ONE[chg.ind]]) < (tmp1*tmpq)) & 
-            ((tmp1*tmpq) <= (tmp1*Bs[,rem.OSind[chg.ind]]))
-        } else {
-          if (N.BLOCKS>1) set.seed(112358)
-          for (kB in 1:N.BLOCKS) { #only draw the 2 relevant order statistics
-            if (N.BLOCKS>1) Bs <- quantile.inf.betas(u=(1:n)/(n+1),n=n,reps=BLOCK.SIZE)
-            Us <- c(rem.OSind[chg.ind]+rem.ONE[chg.ind],rem.OSind[chg.ind])/(n+1)
-            Bs <- quantile.inf.betas(u=sort(Us),n=n,reps=BLOCK.SIZE)
-            if (rem.ONE[chg.ind]>0) Bs <- Bs[,2:1] #to undo sort(Us)
-            newrejs[((kB-1)*BLOCK.SIZE+1):(kB*BLOCK.SIZE)] <- 
-              ((tmp1*Bs[,1]) < (tmp1*tmpq)) & ((tmp1*tmpq) <= (tmp1*Bs[,2]))
-          }
-        }
-        rejs <- pmax(rejs,newrejs)
-        if (mean(rejs)<=ALPHA) { #update ret
-          rem.OSind[chg.ind] <- rem.OSind[chg.ind]+rem.ONE[chg.ind]
-          ret$OSind[rem.ind] <- rem.OSind
-        } else break
-      }
-      # update Lstat, reject, n.newrejs, and RPmat for next iteration
-      ret$Lstat[rem.ind] <- X[ret$OSind[rem.ind]]
-      ret$reject[rem.ind] <- ((rem.ONE*ret$Lstat[rem.ind])>(rem.ONE*ret$H0.val[rem.ind]))
-      RPmat <- RPmat[,!ret$reject[rem.ind]]
-      if (sum(!ret$reject[rem.ind])<=1) RPmat <- matrix(RPmat,ncol=1)
-      n.newrejs <- sum(ret$reject[rem.ind])
+      cat(sprintf("%d new rejection(s).\n",n.newrejs),file="")
     }
-    if (!STEPDOWN.FLAG) {
-      cat(sprintf("%d new rejection(s).\n",sum(ret$reject)-n.rej.init),file="")
-      break #only go through once when PRETEST but not STEPDOWN
-    }
-    cat(sprintf("%d new rejection(s).\n",n.newrejs),file="")
+    rm(Bs); rm(RPmat)
+    return(ret[,-dim(ret)[2]])
   }
-  rm(Bs); rm(RPmat)
-  return(ret[,-dim(ret)[2]])
-}
 
 # compute p-value:
 #   X = observed data vector, sorted in increasing order.  (Not actually used, but helpful reminder.)
@@ -460,7 +458,6 @@ GK.dist.inf.1s.pval <- function(X=NULL,H0=NULL,ONESIDED=NULL) { #,VERBOSE=FALSE,
   } else {
     if (ONESIDED==0) return(p.lo) else return(min(1,adj1s(p.lo)))
   }
-#   return(GK.dist.inf.1s.verify(alpha.tildes=a.min,n=n,VERBOSE=VERBOSE,MIN.DRAWS=MIN.DRAWS)$RP0s)
 }
 
 #
@@ -492,10 +489,13 @@ GK.dist.inf.1s.pval <- function(X=NULL,H0=NULL,ONESIDED=NULL) { #,VERBOSE=FALSE,
 #  more than n pointwise CIs.  
 #  ONESIDED: +1 for H0:Fx()<=Fy(), -1 for H0:Fx()>=Fy(), 0 for two-sided; note: opposite inequalities if writing quantile functions
 #  PLOT.FLAG: if TRUE, then draw graph of rejection bands.
-#QTEONLY.FLAG test simulation code: NREPLIC=100;n=100;set.seed(112358);rfn=rnorm;rejs=matrix(NA,NREPLIC,6);system.time(for(irep in 1:NREPLIC) {tmp=GK.dist.inf.2s(X=rfn(n),Y=rfn(n),alpha=0.1,ONESIDED=1,STEPDOWN.FLAG=F,PLOT.FLAG=F,PRETEST.FLAG=F,QTEONLY.FLAG=TRUE);rejs[irep,]=tmp$prejs}); c(apply(rejs,2,mean),mean(apply(rejs,1,any)))
-#test code output:    user  system elapsed 
-# 1072.41   23.70 1097.44 
-# [1] 0.01 0.00 0.01 0.05 0.04 0.02 0.10
+#  QTEONLY.FLAG: 
+# test simulation code: NREPLIC=100;n=100;set.seed(112358);rfn=rnorm;rejs=matrix(NA,NREPLIC,7);system.time(for(irep in 1:NREPLIC) {tmp=GK.dist.inf.2s(X=rfn(n),Y=rfn(n),alpha=0.1,ONESIDED=1,STEPDOWN.FLAG=F,PLOT.FLAG=F,PRETEST.FLAG=F,QTEONLY.FLAG=TRUE);rejs[irep,]=tmp$prejs}); c(apply(rejs,2,mean),FWER=mean(apply(rejs,1,any)))
+# test code output:
+#   user  system elapsed 
+# 301.75    5.27  924.83  
+#                                    FWER 
+# 0.03 0.01 0.01 0.03 0.04 0.03 0.01 0.10 
 GK.dist.inf.2s <- function(X=NULL,Y=NULL,alpha=0.05,ONESIDED=0,
                            PLOT.FLAG=FALSE,
                            ttX=NULL,ttY=NULL,FRAC=1,
@@ -516,7 +516,6 @@ GK.dist.inf.2s <- function(X=NULL,Y=NULL,alpha=0.05,ONESIDED=0,
     if (ONESIDED!=0) alpha <- 2*alpha
     tmp <- GK.dist.2s.alpha.tilde(min(n),max(n),alpha)
     alpha.tilde <- tmp[1];  alpha.sim <- tmp[2]
-    # L <- U <- H <- vector("list",2) #L(ow) and H(igh) CI endpoints, plus order statistics
     CIs.x <- GK.dist.inf.1s.CIs(n=n[1],alpha.tilde=alpha.tilde,FRAC=FRAC,tt=ttX)
     CIs.y <- GK.dist.inf.1s.CIs(n=n[2],alpha.tilde=alpha.tilde,FRAC=FRAC,tt=ttY)
     if (ONESIDED>0) {
@@ -524,8 +523,9 @@ GK.dist.inf.2s <- function(X=NULL,Y=NULL,alpha=0.05,ONESIDED=0,
     } else if (ONESIDED<0) {
       CIs.x[,1] <- -Inf;  CIs.y[,2] <- Inf
     }
-    rej <- GK.dist.inf.rej.2s(n=n,L=list(xlo=CIs.x[,1],ylo=CIs.y[,1]),U=U,
-                              H=list(xhi=CIs.x[,2],yhi=CIs.y[,2]))
+    rej <- any(GK.dist.inf.rej.2s.r(list(CIs.x=CIs.x, CIs.y=CIs.y, U=U))$reject)
+    # rej <- GK.dist.inf.rej.2s(n=n,L=list(xlo=CIs.x[,1],ylo=CIs.y[,1]),U=U,
+    #                           H=list(xhi=CIs.x[,2],yhi=CIs.y[,2]))
     ret <- list(CIs.x=CIs.x,CIs.y=CIs.y,rej=rej,alpha.sim=alpha.sim,U=U)
     if (ONESIDED!=0) alpha <- alpha/2 #to undo above
   }
@@ -541,7 +541,6 @@ GK.dist.inf.2s <- function(X=NULL,Y=NULL,alpha=0.05,ONESIDED=0,
       # Need to flip ONESIDED for quantile (vs. CDF)...then again for PRETEST
       prerejs <- GK.joint.QTE.inf(X=U$x,Y=U$y,p=ps[!prejs],
                                   ALPHA=alpha*min(1,1/log(min(n))),ONESIDED=ONESIDED)
-      # ALPHA=alpha/2*min(1,pnorm(-log(min(n))/3)/0.05),ONESIDED=-ONESIDED)
     } else if (STEPDOWN.FLAG && !QTEONLY.FLAG) {
       for (ip in 1:length(ps)) {
         p <- ps[ip]
@@ -580,12 +579,6 @@ GK.dist.inf.2s <- function(X=NULL,Y=NULL,alpha=0.05,ONESIDED=0,
 # Precondition: X and Y already sorted (ascending)
 # p: vector of quantiles
 # ONESIDED: +1 for H0:QTE(X-Y)<=0, -1 for >=0, 0 for two-sided; note: opposite of CDF inequality direction
-#
-# Test code/output:
-#> NREPLIC=1000;n=100;set.seed(112358);rfnX=rnorm;rfnY=function(n){ret=rnorm(n);return(ifelse(ret>qnorm(3/7),ret+4*(ret-qnorm(3/7)),ret))};rejs=matrix(NA,NREPLIC,6);system.time(for(irep in 1:NREPLIC) {rejs[irep,]=GK.joint.QTE.inf(X=sort(rfnX(n)),Y=sort(rfnY(n)),p=(1:6)/7,ALPHA=0.1,ONESIDED=-1,ALPHAtilde=ALPHAtilde)}); c(apply(rejs,2,mean),mean(apply(rejs[,1:3],1,any)))
-# user  system elapsed 
-# 1.92    0.01    1.94 
-# [1] 0.023 0.030 0.064 0.732 0.996 1.000 0.092
 GK.joint.QTE.inf <- function(X,Y,p,ALPHA,ONESIDED=0,BETA.BLOCK.SIZE=1e5,BETA.BLOCKS=5,ALPHAtilde=NULL) {
   # Set RNG seed for replicability (and save current seed to re-seed on exit)
   oldseed <- NULL
@@ -594,13 +587,13 @@ GK.joint.QTE.inf <- function(X,Y,p,ALPHA,ONESIDED=0,BETA.BLOCK.SIZE=1e5,BETA.BLO
   }
   on.exit(if (!is.null(oldseed)) { assign(".Random.seed", oldseed, .GlobalEnv) }, add=TRUE)
   set.seed(112358) #for replicability
-# 
+  # 
   n <- list(t=length(X),c=length(Y));  len.p <- length(p)
   if (len.p==1) {
     tmp <- quantile.inf(X=list(t=X,c=Y),p=p,ALPHA=ALPHA,ONESIDED=ONESIDED,METHOD.TYPE='qte',GAMMA=list(t=1,c=1))
     return(tmp$CI$lo>0 || tmp$CI$hi<0)
   }
-  # LIKE cal.fn(a) AND SUCH IN quantile_inf.R...
+  # similar to cal.fn(a) in quantile_inf.R
   cal.fn <- function(a) {
     ust <- usc <- rep.int(NA,(1+(ONESIDED==0))*len.p) #lower endpoint first
     for (i in 1:len.p) {
@@ -650,27 +643,27 @@ GK.joint.QTE.inf <- function(X,Y,p,ALPHA,ONESIDED=0,BETA.BLOCK.SIZE=1e5,BETA.BLO
       uth <- quantile.inf.CIuh(p[ip],n$t,ALPHAtilde)
       ucl <- quantile.inf.CIul(p[ip],n$c,ALPHAtilde)
       tmp <- tryCatch({Qth <- quantile.inf.interp(X,uth)
-                       Qcl <- quantile.inf.interp(Y,ucl)
-                       (Qcl>Qth)},
-                      error=function(err) FALSE,
-                      warning=function(w) FALSE)
+      Qcl <- quantile.inf.interp(Y,ucl)
+      (Qcl>Qth)},
+      error=function(err) FALSE,
+      warning=function(w) FALSE)
       if (tmp) rejs[ip] <- TRUE
     }
     if (ONESIDED>=0) {
       uch <- quantile.inf.CIuh(p[ip],n$c,ALPHAtilde)
       utl <- quantile.inf.CIul(p[ip],n$t,ALPHAtilde)
       tmp <- tryCatch({Qch <- quantile.inf.interp(Y,uch)
-                       Qtl <- quantile.inf.interp(X,utl)
-                       (Qtl>Qch)},
-                      error=function(err) FALSE,
-                      warning=function(w) FALSE)
+      Qtl <- quantile.inf.interp(X,utl)
+      (Qtl>Qch)},
+      error=function(err) FALSE,
+      warning=function(w) FALSE)
       if (tmp) rejs[ip] <- TRUE
     }
   }
   return(rejs)
 }
 
-# compute two-sided p-value:
+# Compute two-sided p-value:
 #   X = observed data, sample #1
 #   Y = observed data, sample #2
 #   VERBOSE: if TRUE, then print progress updates during simulation step
@@ -697,9 +690,15 @@ GK.dist.inf.2s.pval <- function(X=NULL,Y=NULL,VERBOSE=FALSE,MIN.DRAWS=1e4,PARALL
     a.lo <- a.lo/10
     CIs.x <- GK.dist.inf.1s.CIs(n=nx,alpha.tilde=a.lo,FRAC=FRAC,tt=TT.x)
     CIs.y <- GK.dist.inf.1s.CIs(n=ny,alpha.tilde=a.lo,FRAC=FRAC,tt=TT.y)
-    rej <- GK.dist.inf.rej.2s(n=c(nx,ny),L=list(xlo=CIs.x[,1],ylo=CIs.y[,1]),U=U,
-                              H=list(xhi=CIs.x[,2],yhi=CIs.y[,2]),
-                              ONESIDED=ONESIDED)
+    if (ONESIDED>0) {
+      CIs.x[,2] <- Inf;  CIs.y[,1] <- -Inf
+    } else if (ONESIDED<0) {
+      CIs.x[,1] <- -Inf;  CIs.y[,2] <- Inf
+    }
+    rej <- any(GK.dist.inf.rej.2s.r(list(CIs.x=CIs.x, CIs.y=CIs.y, U=U))$reject)
+    # rej <- GK.dist.inf.rej.2s(n=c(nx,ny),L=list(xlo=CIs.x[,1],ylo=CIs.y[,1]),U=U,
+    #                           H=list(xhi=CIs.x[,2],yhi=CIs.y[,2]),
+    #                           ONESIDED=ONESIDED)
   }
   if (a.lo<=1e3*.Machine$double.eps) { 
     return(GK.dist.inf.2s.verify(alpha.tildes=a.lo,nx=nx,ny=ny,VERBOSE=VERBOSE,MIN.DRAWS=MIN.DRAWS,PARALLEL=PARALLEL)$RP0s)
@@ -710,9 +709,15 @@ GK.dist.inf.2s.pval <- function(X=NULL,Y=NULL,VERBOSE=FALSE,MIN.DRAWS=1e4,PARALL
     a.hi <- 1-(1-a.hi)/10
     CIs.x <- GK.dist.inf.1s.CIs(n=nx,alpha.tilde=a.hi,FRAC=FRAC,tt=TT.x)
     CIs.y <- GK.dist.inf.1s.CIs(n=ny,alpha.tilde=a.hi,FRAC=FRAC,tt=TT.y)
-    rej <- GK.dist.inf.rej.2s(n=c(nx,ny),L=list(xlo=CIs.x[,1],ylo=CIs.y[,1]),U=U,
-                              H=list(xhi=CIs.x[,2],yhi=CIs.y[,2]),
-                              ONESIDED=ONESIDED)
+    if (ONESIDED>0) {
+      CIs.x[,2] <- Inf;  CIs.y[,1] <- -Inf
+    } else if (ONESIDED<0) {
+      CIs.x[,1] <- -Inf;  CIs.y[,2] <- Inf
+    }
+    rej <- any(GK.dist.inf.rej.2s.r(list(CIs.x=CIs.x, CIs.y=CIs.y, U=U))$reject)
+    # rej <- GK.dist.inf.rej.2s(n=c(nx,ny),L=list(xlo=CIs.x[,1],ylo=CIs.y[,1]),U=U,
+    #                           H=list(xhi=CIs.x[,2],yhi=CIs.y[,2]),
+    #                           ONESIDED=ONESIDED)
   }
   if (a.hi>=1-1e3*.Machine$double.eps) { 
     return(GK.dist.inf.2s.verify(alpha.tildes=a.hi,nx=nx,ny=ny,VERBOSE=VERBOSE,MIN.DRAWS=MIN.DRAWS)$RP0s)
@@ -722,9 +727,15 @@ GK.dist.inf.2s.pval <- function(X=NULL,Y=NULL,VERBOSE=FALSE,MIN.DRAWS=1e4,PARALL
     a.cur <- (a.lo+a.hi)/2
     CIs.x <- GK.dist.inf.1s.CIs(n=nx,alpha.tilde=a.cur,FRAC=FRAC,tt=TT.x)
     CIs.y <- GK.dist.inf.1s.CIs(n=ny,alpha.tilde=a.cur,FRAC=FRAC,tt=TT.y)
-    rej <- GK.dist.inf.rej.2s(n=c(nx,ny),L=list(xlo=CIs.x[,1],ylo=CIs.y[,1]),U=U,
-                              H=list(xhi=CIs.x[,2],yhi=CIs.y[,2]),
-                              ONESIDED=ONESIDED)
+    if (ONESIDED>0) {
+      CIs.x[,2] <- Inf;  CIs.y[,1] <- -Inf
+    } else if (ONESIDED<0) {
+      CIs.x[,1] <- -Inf;  CIs.y[,2] <- Inf
+    }
+    rej <- any(GK.dist.inf.rej.2s.r(list(CIs.x=CIs.x, CIs.y=CIs.y, U=U))$reject)
+    # rej <- GK.dist.inf.rej.2s(n=c(nx,ny),L=list(xlo=CIs.x[,1],ylo=CIs.y[,1]),U=U,
+    #                           H=list(xhi=CIs.x[,2],yhi=CIs.y[,2]),
+    #                           ONESIDED=ONESIDED)
     if (rej==0) { a.lo <- a.cur } else { a.hi <- a.cur }
   }
   # Simulate overall type I error for alpha.tilde found above
@@ -803,14 +814,12 @@ GK.dist.inf.rej.1s <- function(X, CIs, H0.fn) {
 }
 
 # Simulate (joint) type I error given some alpha-tilde(s), 1-sample
-#PARALLEL: # CPUs available (requires foreach and doParallel packages)
+# PARALLEL: # CPUs available (requires foreach and doParallel packages)
 GK.dist.inf.1s.verify <- function(alpha.tildes=NULL,n=NULL,VERBOSE=FALSE,MIN.DRAWS=2e5,PARALLEL=1) {
   if (is.null(alpha.tildes) || is.null(n)) {stop("Error: argument NULL for alpha.tildes and/or n not allowed in function GK.dist.inf.1s.verify()")}
   if (PARALLEL>1) {
     if (!require("parallel") || !require("foreach")) {warning("Install package foreach in order to run PARALLEL."); PARALLEL <- 0}
     if (!require("doParallel")) {warning("Install package doParallel in order to run PARALLEL."); PARALLEL <- 0}
-#     if (!require("plyr")) {warning("Install package plyr in order to run PARALLEL."); PARALLEL <- 0}  
-    # setDefaultCluster(workers)
     PARALLEL <- tryCatch({workers <- makeCluster(PARALLEL); registerDoParallel(workers); on.exit(stopCluster(workers),add=TRUE); PARALLEL}, error=function(Err){warning(sprintf("Error creating %d clusters",PARALLEL)); 0})
   } else if (PARALLEL<0) {
     warning("PARALLEL must be a non-negative integer: 0 (or 1) for not parallel, positive for number of parallel CPUs to use.")
@@ -836,9 +845,9 @@ GK.dist.inf.1s.verify <- function(alpha.tildes=NULL,n=NULL,VERBOSE=FALSE,MIN.DRA
   if (PARALLEL>1) {
     clusterSetRNGStream(workers,112358)
     rejs <- foreach(irep=1:(N.DRAWS/BLOCKSIZE),.combine=rbind,.inorder=FALSE) %dopar% {
-#       if (VERBOSE) {
-#         cat(sprintf("Start block %d/%d; ",irep,N.DRAWS/BLOCKSIZE),file="",sep='')
-#       }
+      #       if (VERBOSE) {
+      #         cat(sprintf("Start block %d/%d; ",irep,N.DRAWS/BLOCKSIZE),file="",sep='')
+      #       }
       unirands <- matrix(runif(BLOCKSIZE*ceiling((n+1)/FRAC-1)),BLOCKSIZE)
       frac.order.stats <- NULL
       if (FRAC==1) {
@@ -854,10 +863,10 @@ GK.dist.inf.1s.verify <- function(alpha.tildes=NULL,n=NULL,VERBOSE=FALSE,MIN.DRA
       }
       rejs <- NULL
       for (j in 1:length(alpha.tildes)) {
-#         rejs[(BLOCKSIZE*(irep-1)+1):(BLOCKSIZE*irep),j] <- 1 - 
+        #         rejs[(BLOCKSIZE*(irep-1)+1):(BLOCKSIZE*irep),j] <- 1 - 
         rejs <- cbind(rejs, 1 -
-          apply(frac.order.stats,1,function(x) prod(CIs[[j]][1,]<x,na.rm=TRUE))*
-          apply(frac.order.stats,1,function(x) prod(x<CIs[[j]][2,],na.rm=TRUE))
+                        apply(frac.order.stats,1,function(x) prod(CIs[[j]][1,]<x,na.rm=TRUE))*
+                        apply(frac.order.stats,1,function(x) prod(x<CIs[[j]][2,],na.rm=TRUE))
         )
       }
       rejs
@@ -900,32 +909,32 @@ GK.dist.inf.plot.1s <-
            lty="2121",pch=NULL,draw.legend=FALSE,legend="confidence band",
            panel.first=NULL, lwd=2, mgp=c(2.1,0.5,0), xaxp=NULL, yaxp=NULL,
            cex.main=2,cex.axis=2,cex.lab=2,parmar=c(5.0,6.0,6.0,2.1)) {
-  if (is.null(dist.inf.obj)) {stop("Argument should be returned list from GK.dist.inf.1s")}
-  X <- dist.inf.obj$X;  CIs <- dist.inf.obj$CIs
-  U <- sort(dist.inf.obj$X);  n <- length(U)
-  plot.band.x.L <- rbind(c(U[1]-100*max(abs(U)),0),
-                         cbind(c(rep(U,each=2),U[n]),
-                         c(0,rep(CIs[,1],each=2))),
-                         c(U[n]+100*max(abs(U)),CIs[n,1]))
-  plot.band.x.H <- rbind(c(U[1]-100*max(abs(U)),CIs[1,2]),
-                         cbind(c(U[1],rep(U,each=2)),
-                         c(rep(CIs[,2],each=2),1)),
-                         c(U[n]+100*max(abs(U)),1))
-  #   x11() #  quartz()
-  par(family="serif",mar=parmar)
-  plot(x=plot.band.x.L[,1],y=plot.band.x.L[,2],type="n",pch=1,col=1, 
-       main=main, sub=sub, xlab=xlab, ylab=ylab, cex.main=cex.main, 
-       mgp=mgp, cex.axis=cex.axis, cex.lab=cex.lab, 
-       xlim=ifelse(rep.int(is.null(xlim),2),c(U[1],U[n]),xlim), 
-       ylim=ifelse(rep.int(is.null(ylim),2),c(0,1),ylim), 
-       xaxs=xaxs, yaxs=yaxs, panel.first=panel.first, lwd=lwd,
-       xaxp=xaxp, yaxp=yaxp)
-  lines(plot.band.x.L, type='l', col=1, pch=pch, lwd=lwd, lty=lty)
-  lines(plot.band.x.H, type='l', col=1, pch=pch, lwd=lwd, lty=lty)
-  if (draw.legend) {
-     legend('bottomright', legend=legend, inset=0.01, col=1, pch=pch, lty=lty, lwd=lwd, cex=1.5, y.intersp=0.9, bg='white')
+    if (is.null(dist.inf.obj)) {stop("Argument should be returned list from GK.dist.inf.1s")}
+    X <- dist.inf.obj$X;  CIs <- dist.inf.obj$CIs
+    U <- sort(dist.inf.obj$X);  n <- length(U)
+    plot.band.x.L <- rbind(c(U[1]-100*max(abs(U)),0),
+                           cbind(c(rep(U,each=2),U[n]),
+                                 c(0,rep(CIs[,1],each=2))),
+                           c(U[n]+100*max(abs(U)),CIs[n,1]))
+    plot.band.x.H <- rbind(c(U[1]-100*max(abs(U)),CIs[1,2]),
+                           cbind(c(U[1],rep(U,each=2)),
+                                 c(rep(CIs[,2],each=2),1)),
+                           c(U[n]+100*max(abs(U)),1))
+    #   x11() #  quartz()
+    par(family="serif",mar=parmar)
+    plot(x=plot.band.x.L[,1],y=plot.band.x.L[,2],type="n",pch=1,col=1, 
+         main=main, sub=sub, xlab=xlab, ylab=ylab, cex.main=cex.main, 
+         mgp=mgp, cex.axis=cex.axis, cex.lab=cex.lab, 
+         xlim=ifelse(rep.int(is.null(xlim),2),c(U[1],U[n]),xlim), 
+         ylim=ifelse(rep.int(is.null(ylim),2),c(0,1),ylim), 
+         xaxs=xaxs, yaxs=yaxs, panel.first=panel.first, lwd=lwd,
+         xaxp=xaxp, yaxp=yaxp)
+    lines(plot.band.x.L, type='l', col=1, pch=pch, lwd=lwd, lty=lty)
+    lines(plot.band.x.H, type='l', col=1, pch=pch, lwd=lwd, lty=lty)
+    if (draw.legend) {
+      legend('bottomright', legend=legend, inset=0.01, col=1, pch=pch, lty=lty, lwd=lwd, cex=1.5, y.intersp=0.9, bg='white')
+    }
   }
-}
 
 #
 # Draw band on top of existing plot, for visualizing posterior
@@ -1013,7 +1022,6 @@ GK.dist.inf.1s.calibrate <- function(NS=NULL,ALPHAS=NULL,N.DRAWS=NULL,CALIB.DEC.
           frac.order.stats <- matrix(runif(N.DRAWS*n),ncol=N.DRAWS);TRUE},
           error=function(MemErr) {FALSE})
         if (!prefill) {
-#           frac.order.stats <- list();  length(frac.order.stats) <- N.DRAWS*n;  dim(frac.order.stats) <- c(n,N.DRAWS)
           tryCatch(frac.order.stats <- matrix(as.numeric(NA),nrow=n,ncol=N.DRAWS), error=function(MemErr) {stop(sprintf("\nNot enough memory for n=%d, N.DRAWS=%d; try reducing N.DRAWS (or suggesting that FRAC>1 be fully implemented)",n,N.DRAWS))} )
           #...so throw error in above line if just not enough room in memory.
           if (VERBOSE) {
@@ -1021,39 +1029,38 @@ GK.dist.inf.1s.calibrate <- function(NS=NULL,ALPHAS=NULL,N.DRAWS=NULL,CALIB.DEC.
             cat(sprintf("Due to memory constraints, will proceed in blocks.\n"),file=LOGFILE,sep='',append=TRUE)
           }
         }
-          gc(verbose=VERBOSE)
-          win <- FALSE
-          for (NBLOCKS in c(1,2,4,8,16,32,64)) {
-            if (!prefill && NBLOCKS<4) { next }
-            if (VERBOSE) cat(sprintf("Trying NBLOCKS=%d;",NBLOCKS))
-            success <- tryCatch({
-              BLOCKSIZE <- floor(N.DRAWS/NBLOCKS)
-              for (iblock in 1:NBLOCKS) {
-                if (prefill) {
-                  frac.order.stats[,(((iblock-1)*BLOCKSIZE)+1):(iblock*BLOCKSIZE)] <- 
-                    apply(frac.order.stats[,(((iblock-1)*BLOCKSIZE)+1):(iblock*BLOCKSIZE)],2,sort)
-                } else {
-                  frac.order.stats[,(((iblock-1)*BLOCKSIZE)+1):(iblock*BLOCKSIZE)] <- 
-                    apply(matrix(runif(n*BLOCKSIZE),nrow=n),2,sort)
-                }
-                if (VERBOSE) {
-                  cat(sprintf("Block %d/%d",iblock,NBLOCKS),file="",sep='',append=TRUE)
-                  cat(sprintf("Block %d/%d",iblock,NBLOCKS),file=LOGFILE,sep='',append=TRUE)
-                }
-                #               gc(verbose=FALSE)
+        gc(verbose=VERBOSE)
+        win <- FALSE
+        for (NBLOCKS in c(1,2,4,8,16,32,64)) {
+          if (!prefill && NBLOCKS<4) { next }
+          if (VERBOSE) cat(sprintf("Trying NBLOCKS=%d;",NBLOCKS))
+          success <- tryCatch({
+            BLOCKSIZE <- floor(N.DRAWS/NBLOCKS)
+            for (iblock in 1:NBLOCKS) {
+              if (prefill) {
+                frac.order.stats[,(((iblock-1)*BLOCKSIZE)+1):(iblock*BLOCKSIZE)] <- 
+                  apply(frac.order.stats[,(((iblock-1)*BLOCKSIZE)+1):(iblock*BLOCKSIZE)],2,sort)
+              } else {
+                frac.order.stats[,(((iblock-1)*BLOCKSIZE)+1):(iblock*BLOCKSIZE)] <- 
+                  apply(matrix(runif(n*BLOCKSIZE),nrow=n),2,sort)
               }
-              if (N.DRAWS>BLOCKSIZE*NBLOCKS) {
-                for (icol in (1+BLOCKSIZE*NBLOCKS):N.DRAWS) {
-                  frac.order.stats[,icol] <- sort(frac.order.stats)
-                }
+              if (VERBOSE) {
+                cat(sprintf("Block %d/%d",iblock,NBLOCKS),file="",sep='',append=TRUE)
+                cat(sprintf("Block %d/%d",iblock,NBLOCKS),file=LOGFILE,sep='',append=TRUE)
               }
-              win <- TRUE
-              TRUE}
-                                ,error=function(Err){cat(sprintf("Not enough memory for sorting in %d blocks...",NBLOCKS),file="",sep='',append=TRUE);FALSE})
-            if (success) { break }
-          }
-          if (!win) { stop(sprintf("\nNot enough memory for n=%d, N.DRAWS=%d; try reducing N.DRAWS (or suggesting that FRAC>1 be fully implemented)",n,N.DRAWS)) }
-          gc(verbose=VERBOSE)
+            }
+            if (N.DRAWS>BLOCKSIZE*NBLOCKS) {
+              for (icol in (1+BLOCKSIZE*NBLOCKS):N.DRAWS) {
+                frac.order.stats[,icol] <- sort(frac.order.stats)
+              }
+            }
+            win <- TRUE
+            TRUE}
+            ,error=function(Err){cat(sprintf("Not enough memory for sorting in %d blocks...",NBLOCKS),file="",sep='',append=TRUE);FALSE})
+          if (success) { break }
+        }
+        if (!win) { stop(sprintf("\nNot enough memory for n=%d, N.DRAWS=%d; try reducing N.DRAWS (or suggesting that FRAC>1 be fully implemented)",n,N.DRAWS)) }
+        gc(verbose=VERBOSE)
       } else {
         if (FALSE) { #(prev.n-n==1) {
           gc(verbose=VERBOSE)
@@ -1066,19 +1073,8 @@ GK.dist.inf.1s.calibrate <- function(NS=NULL,ALPHAS=NULL,N.DRAWS=NULL,CALIB.DEC.
             } #else: dropping (n+1)th entry anyway, no need to reorder.
           }
           rm(tin)
-#           frac.order.stats <- rbind(runif(N.DRAWS),frac.order.stats)
-#           gc(verbose=VERBOSE)
-#           for (icol in 1:N.DRAWS) {
-#             tin <- sum(frac.order.stats[2:n,icol]<frac.order.stats[1,icol])
-#             if (tin==(n-1)) {
-#               frac.order.stats[,icol] <- frac.order.stats[c(2:n,1),icol]
-#             } else if (tin>0) {
-#               frac.order.stats[,icol] <- frac.order.stats[c(2:(tin+1),1,(tin+2):n),icol]
-#             }
-#           }
           gc(verbose=VERBOSE)
         } else {
-#           gc(verbose=VERBOSE)
           ndiff <- prev.n-n
           for (icol in 1:N.DRAWS) {
             tin <- sample.int(n=prev.n,size=ndiff,replace=FALSE)
@@ -1086,7 +1082,6 @@ GK.dist.inf.1s.calibrate <- function(NS=NULL,ALPHAS=NULL,N.DRAWS=NULL,CALIB.DEC.
             frac.order.stats[,icol] <- 
               c(frac.order.stats[keepind,icol],frac.order.stats[-keepind,icol])
           }
-          #           frac.order.stats <- apply(rbind(matrix(runif(N.DRAWS*(n-dim(frac.order.stats)[1])),ncol=N.DRAWS),frac.order.stats),2,sort)
         }
       }
     } else {
@@ -1132,9 +1127,6 @@ GK.dist.inf.1s.calibrate <- function(NS=NULL,ALPHAS=NULL,N.DRAWS=NULL,CALIB.DEC.
           ind <- indleft[indind]
           rejvec[indind] <- 1 - prod(CIs[1,]<frac.order.stats[1:n,ind])*prod(frac.order.stats[1:n,ind]<CIs[2,])
         }
-#         rejvec <- 1-
-#           apply(frac.order.stats[,indleft],2,function(x) prod(CIs[1,]<x,na.rm=TRUE))*
-#           apply(frac.order.stats[,indleft],2,function(x) prod(x<CIs[2,],na.rm=TRUE))
         rejs <- rejs.known + sum(rejvec)
         a.prev <- a.cur;  f.prev <- rejs/N.DRAWS
         if (f.prev>ALPHA) {
@@ -1176,7 +1168,7 @@ GK.dist.inf.1s.calibrate <- function(NS=NULL,ALPHAS=NULL,N.DRAWS=NULL,CALIB.DEC.
           file=OUTFILE,sep="\n",append=TRUE)
       if (VERBOSE) {
         cat(sprintf(sprintf("alphatilde(alpha=%%5.3f,n=%%d)=%s;f.prev=%s",SIGFMTa,SIGFMTf),
-                  ALPHA, n, alpha.tilde, f.prev),
+                    ALPHA, n, alpha.tilde, f.prev),
             file="",sep="\n",append=TRUE)
         cat(sprintf("Time elapsed: %s",format(Sys.time()-start.time)), 
             sep="\n",append=TRUE,file="")
@@ -1225,7 +1217,7 @@ GK.dist.2s.alpha.tilde <- function(nx,ny,alpha) {
     stop(sprintf("alpha must be in {%s} to use the lookup table, but the argument's value is %g.  Use argument alpha=NULL instead, to get a p-value, and compare it to alpha; reject H0 if the p-value is below alpha.",
                  paste0(unique(GK.dist.inf.2s.lookup$ALPHA),collapse=","),alpha))
   }
-  #exact match or else err on conservative side
+  # exact match or else err on conservative side
   lookup.conservative <- lookup.ALPHA[(lookup.ALPHA$nx>=nx)&(lookup.ALPHA$ny>=ny),] #each alpha-tilde in here is no bigger than exact alpha-tilde, since alpha-tilde decreases with sample size.
   if (dim(lookup.conservative)[1]==0) { #nx,ny too big for table--use formula or throw error
     if (!is.null(at.formula)) {
@@ -1242,7 +1234,7 @@ GK.dist.2s.alpha.tilde <- function(nx,ny,alpha) {
   if (ret.alpha.sim.lo!=ret.alpha.sim.hi) {
     ret.alpha.tilde <- ret.alpha.tilde - 0.5*10^(-SIGFIGa) #make a little smaller when there's a discontinuity in alpha as a function of alpha-tilde around the current value
   }
-  #Finally...just use the formula if significantly less conservative (and n>=200)
+  # Finally...just use the formula if significantly less conservative (and n>=200)
   if (!is.null(at.formula)) {
     if (max(nx,ny)>=200 && at.formula>1.01*ret.alpha.tilde) {
       return(c(at.formula,NA))
@@ -1251,8 +1243,10 @@ GK.dist.2s.alpha.tilde <- function(nx,ny,alpha) {
   return(c(ret.alpha.tilde, ret.alpha.sim.lo))
 }
 
-# Function (subroutine): does 2-sided [now: or ONESIDED!=0] test reject null hypothesis of equality? (2-sample)
-# pre-condition: U[[1]] and U[[2]] are numeric vectors sorted in increasing order.
+# Function (subroutine): does 2-sample test reject global null hypothesis?
+# pre-condition: U[[1]] and U[[2]] are numeric vectors
+#                of all distinct/unique values (fine for simulated data but not all real data samples)
+#                sorted in increasing order.
 GK.dist.inf.rej.2s <- function(n,L,U,H,ONESIDED=0) {
   ind <- c(1,1)
   xy <- 1 #1=X, 2=Y
@@ -1274,8 +1268,59 @@ GK.dist.inf.rej.2s <- function(n,L,U,H,ONESIDED=0) {
 
 # Function (subroutine): MTP rejections by sample value.
 # argument GK.dist.inf.obj is return value from two-sample call to GK.dist.inf()
-# return value: data.frame showing whether H_{0r} is rejected (rej=TRUE) or not (rej=FALSE) for each interval [from,to)
+# return value: data.frame showing whether H_{0r} is rejected (reject=TRUE) or not (reject=FALSE) for each interval [from,to)
 GK.dist.inf.rej.2s.r <- function(GK.dist.inf.obj) {
+  obj <- GK.dist.inf.obj
+  # consolidate any duplicate Ux or Uy, pull back "next" upper CI endpoint to mimic stairstep band
+  dfX <- data.frame(from=c(-Inf, obj$U$x, Inf),
+                    CIx.lo=c(0, obj$CIs.x[,1], 1),
+                    CIx.hi=c(0, obj$CIs.x[,2], 1) )
+  dfY <- data.frame(from=c(-Inf, obj$U$y, Inf),
+                    CIy.lo=c(0, obj$CIs.y[,1], 1),
+                    CIy.hi=c(0, obj$CIs.y[,2], 1) )
+  dfX <- dfX[order(dfX$from, dfX$CIx.lo, decreasing=FALSE) , ]
+  dfY <- dfY[order(dfY$from, dfY$CIy.lo, decreasing=FALSE) , ]
+  # code for X
+  excl.inds <- NULL # indices to exclude (duplicate 'from' value)
+  for (i in 1:(nrow(dfX)-1)) {
+    dfX$CIx.hi[i] <- dfX$CIx.hi[i+1] # stairstep band: take upper endpoint from *next* CI
+    if (dfX$from[i]==dfX$from[i+1]) excl.inds <- c(excl.inds, i)
+  }
+  dfX <- dfX[-excl.inds , ]
+  # code for Y
+  excl.inds <- NULL # indices to exclude (duplicate 'from' value)
+  for (i in 1:(nrow(dfY)-1)) {
+    dfY$CIy.hi[i] <- dfY$CIy.hi[i+1] # stairstep band: take upper endpoint from *next* CI
+    if (dfY$from[i]==dfY$from[i+1]) excl.inds <- c(excl.inds, i)
+  }
+  dfY <- dfY[-excl.inds , ]
+  # combine X and Y
+  dfX$CIy.lo <- dfX$CIy.hi <- NA
+  dfY$CIx.lo <- dfY$CIx.hi <- NA
+  df <- rbind(dfX, dfY)
+  df <- df[order(df$from, df$CIx.lo) , ] # first duplicate row has non-NA CIx, NA CIy
+  df$to <- NA # for the ranges of values on which to assess rejection
+  df <- df[,c('from','to','CIx.lo','CIx.hi','CIy.lo','CIy.hi')]
+  # deal with duplicates and add 'to' for ranges
+  excl.inds <- NULL
+  for (i in 2:(nrow(df)-1)) {
+    df$to[i] <- df$from[i+1]
+    if (is.na(df$CIx.lo[i])) {
+      df$CIx.lo[i] <- df$CIx.lo[i-1]
+      df$CIx.hi[i] <- df$CIx.hi[i-1]
+    } else {
+      df$CIy.lo[i] <- df$CIy.lo[i-1]
+      df$CIy.hi[i] <- df$CIy.hi[i-1]
+    }
+    if (df$from[i]==df$from[i-1]) excl.inds <- c(excl.inds, i-1)
+  }
+  df <- df[-excl.inds,]
+  df <- df[!(df$from==Inf) , ]
+  df$reject <- (df$CIx.lo > df$CIy.hi) | (df$CIx.hi < df$CIy.lo)
+  return(df[,c('from','to','reject','CIx.lo','CIx.hi','CIy.lo','CIy.hi')])
+}
+# If you need to compare: results from before 24oct2024 used the following
+OLD.GK.dist.inf.rej.2s.r <- function(GK.dist.inf.obj) {
   obj <- GK.dist.inf.obj
   Ux <- obj$U$x;  Uy <- obj$U$y
   CIx <- rbind(c(-Inf,NA), obj$CIs.x, c(NA,Inf))
@@ -1284,23 +1329,14 @@ GK.dist.inf.rej.2s.r <- function(GK.dist.inf.obj) {
   tmp <- order(r[,1])
   r <- r[tmp,]
   r$xind <- cumsum(r[,2]=='x');  r$yind <- cumsum(r[,2]=='y')
-    # cbind( r, cumsum(r[,2]=='x'), cumsum(r[,2]=='y') )
   rej <- rep(NA,dim(r)[1])
   for (i in 1:length(rej)) {
-    # if (r[i,2]=='x') { 
-      #"extra" +1 b/c insert c(-Inf,NA) above
-      tmp1 <- CIx[r[i,3]+1,1]   > CIy[r[i,4]+1+1,2]
-      tmp2 <- CIx[r[i,3]+1+1,2] < CIy[r[i,4]+1,1]
-    # } else {
-    #   tmp1 <- CIx[r[i,3]+1,1]   > CIy[r[i,4]+1+1,2]
-    #   tmp2 <- CIx[r[i,3]+1+1,2] < CIy[r[i,4]+1,1]
-    # }
+    #"extra" +1 b/c insert c(-Inf,NA) above
+    tmp1 <- CIx[r[i,3]+1,1]   > CIy[r[i,4]+1+1,2]
+    tmp2 <- CIx[r[i,3]+1+1,2] < CIy[r[i,4]+1,1]
     rej[i] <- tmp1 || tmp2
   }
-  return(data.frame(from=c(-Inf,r[,1]),
-                    to  =c(r[,1],Inf),
-                    rej =c(F,rej)))
-  # return(list(r=r[,1],rej=rej))
+  return(data.frame(from=c(-Inf,r[,1]), to=c(r[,1],Inf), rej=c(F,rej)))
 }
 
 # Simulate (joint) type I error given alpha-tilde(s), 2-sample
@@ -1367,7 +1403,7 @@ GK.dist.inf.2s.verify <- function(alpha.tildes=NULL,nx=NULL,ny=NULL,VERBOSE=FALS
       }
       for (aind in 1:length(alpha.tildes)) {
         for (j in 1:BLOCKSIZE) {
-#           rejs[BLOCKSIZE*(irep-1)+j,aind] <- 
+          #           rejs[BLOCKSIZE*(irep-1)+j,aind] <- 
           reprejs[j,aind] <- 
             GK.dist.inf.rej.2s(n=c(nx,ny), L=L[[aind]], U=list(Ux=frac.order.stats.x[j,],Uy=frac.order.stats.y[j,]), H=H[[aind]])
         }
@@ -1427,8 +1463,8 @@ GK.dist.inf.2s.verify <- function(alpha.tildes=NULL,nx=NULL,ny=NULL,VERBOSE=FALS
 # Plotting function for two-sample bands.  dist.inf.obj is the returned list from GK.dist.inf.2s
 # NOTE: you may need to open device (X11, quartz, etc.) before calling this function.
 GK.dist.inf.plot.2s <- function(dist.inf.obj=NULL,main="Bands determining rejection\n(NOT 'confidence bands')",sub="",xlab="X, Y",ylab="F(X), F(Y)",
-                                   pchX=3,pchY=4,ltyX="31",ltyY="22",lwdX=2,lwdY=2,
-                                   draw.legend=TRUE,legend=c("X","Y")) {
+                                pchX=3,pchY=4,ltyX="31",ltyY="22",lwdX=2,lwdY=2,
+                                draw.legend=TRUE,legend=c("X","Y")) {
   if (is.null(dist.inf.obj)) {stop("Argument should be returned list from GK.dist.inf.2s")}
   U <- dist.inf.obj$U
   n <- dist.inf.obj$n
@@ -1452,21 +1488,24 @@ GK.dist.inf.plot.2s <- function(dist.inf.obj=NULL,main="Bands determining reject
                          cbind(c(U[[2]][1],rep(U[[2]],each=2)),
                                c(rep(CIs.y[,2],each=2),1)),
                          c(U[[2]][n[2]]+tmp.big,1))
-  #     x11() #quartz()
   par(family="serif",mar=c(5.0,6.0,6.0,2.1))
   plot(x=plot.band.x.L[,1],y=plot.band.x.L[,2],type="n",pch=1,col=1, main=main, sub=sub, xlab=xlab, ylab=ylab, cex.main=2.0, mgp=c(3,1,0), cex.axis=2, cex.lab=2, xlim=c(min(unlist(U)),max(unlist(U))), ylim=c(0,1))
-#   points(plot.band.x.L, type='o', col=1, pch=pchX, lwd=lwdX, lty=ltyX)
-  lines(plot.band.x.L, type='l', col=1, lwd=lwdX, lty=ltyX)
-  points(U[[1]],CIs.x[,1], type='p', col=1, pch=pchX, lwd=lwdX)
-#   points(plot.band.x.H, type='o', col=1, pch=pchX, lwd=lwdX, lty=ltyX)
-  lines(plot.band.x.H, type='l', col=1, lwd=lwdX, lty=ltyX)
-  points(U[[1]],CIs.x[,2], type='p', col=1, pch=pchX, lwd=lwdX)
-#   points(plot.band.y.L, type='o', col=1, pch=pchY, lwd=lwdY, lty=ltyY)
-  lines(plot.band.y.L, type='l', col=1, lwd=lwdY, lty=ltyY)
-  points(U[[2]],CIs.y[,1], type='p', col=1, pch=pchY, lwd=lwdY)
-#   points(plot.band.y.H, type='o', col=1, pch=pchY, lwd=lwdY, lty=ltyY)
-  lines(plot.band.y.H, type='l', col=1, lwd=lwdY, lty=ltyY)
-  points(U[[2]],CIs.y[,2], type='p', col=1, pch=pchY, lwd=lwdY)
+  if (!all(CIs.x[,1]<=0)) {
+    lines(plot.band.x.L, type='l', col=1, lwd=lwdX, lty=ltyX)
+    points(U[[1]],CIs.x[,1], type='p', col=1, pch=pchX, lwd=lwdX)
+  }
+  if (!all(CIs.x[,2]>=1)) {
+    lines(plot.band.x.H, type='l', col=1, lwd=lwdX, lty=ltyX)
+    points(U[[1]],CIs.x[,2], type='p', col=1, pch=pchX, lwd=lwdX)
+  }
+  if (!all(CIs.y[,1]<=0)) {
+    lines(plot.band.y.L, type='l', col=1, lwd=lwdY, lty=ltyY)
+    points(U[[2]],CIs.y[,1], type='p', col=1, pch=pchY, lwd=lwdY)
+  }
+  if (!all(CIs.y[,2]>=1)) {
+    lines(plot.band.y.H, type='l', col=1, lwd=lwdY, lty=ltyY)
+    points(U[[2]],CIs.y[,2], type='p', col=1, pch=pchY, lwd=lwdY)
+  }
   if (draw.legend) {
     legend('bottomright', legend=legend, inset=0.01, col=1, pch=c(pchX,pchY), lty=c(ltyX,ltyY), lwd=c(lwdX,lwdY), cex=1.8, y.intersp=0.9, bty='n') #bg='white'
   }
@@ -1527,7 +1566,7 @@ GK.dist.inf.2s.calibrate <- function(NS=NULL,ALPHAS=NULL,N.DRAWS=NULL,CALIB.DEC.
                 paste0(sprintf("%g",NS[1,]),collapse=","), paste0(sprintf("%g",NS[2,]),collapse=","),
                 OUTFILE), file="",sep="\n")
   }
-
+  
   #Appends to end of specified file now, not overwrite (unless file doesn't exist)
   if (OUTFILE!="") {
     if (!file.exists(OUTFILE)) {  # Write to file: header w/ variable names
@@ -1587,7 +1626,7 @@ GK.dist.inf.2s.calibrate <- function(NS=NULL,ALPHAS=NULL,N.DRAWS=NULL,CALIB.DEC.
           permdata <- matrix(as.integer(NA),(nx+ny),N.DRAWS)
           for (j in 1:N.DRAWS) { permdata[,j] <- sample.int(nx+ny) }
           FALSE}, 
-                            error=function(Errr)TRUE)
+          error=function(Errr)TRUE)
       } else {
         problem <- tryCatch({permdata <- replicate(n=N.DRAWS,expr=sample.int(nx+ny),simplify='array');FALSE}, error=function(Errr)TRUE)
       }
@@ -1627,13 +1666,8 @@ GK.dist.inf.2s.calibrate <- function(NS=NULL,ALPHAS=NULL,N.DRAWS=NULL,CALIB.DEC.
           L[[1]] <- CIs.x[,1];  L[[2]] <- CIs.y[,1]
           H[[1]] <- CIs.x[,2];  H[[2]] <- CIs.y[,2]
           # compute rejections given (fixed) CIs and (simulated) data
-          #         N.LEFT <- dim(permdata)[2]
-          #         rej.ind <- rep.int(NA,N.LEFT)
-          #         for (j in 1:N.LEFT) {
           PAR.SUCCESS <- FALSE
-          if (PARALLEL>1 && length(permleft)>500) { # && length(permleft)==N.DRAWS) {
-#             rej.ind <- foreach(samp=iter(permdata,by='col'), .combine=c, .inorder=TRUE, .export=c("GK.dist.inf.rej.2s")) %dopar% {
-#               GK.dist.inf.rej.2s(n=c(nx,ny),L=L,U=list(x=sort(samp[1:nx]),y=sort(samp[(nx+1):(nx+ny)])),H=H)
+          if (PARALLEL>1 && length(permleft)>500) {
             PAR.SUCCESS <- tryCatch({
               rej.ind <- foreach(samps=iblkcol.perm(dat=permdata,cols=permleft,chunkSize=max(1,ceiling(1e4/(nx+ny)))), .combine=c, .inorder=TRUE, .export=c("GK.dist.inf.rej.2s")) %dopar% {
                 itret <- rep.int(as.integer(NA),dim(samps)[2])
@@ -1665,7 +1699,6 @@ GK.dist.inf.2s.calibrate <- function(NS=NULL,ALPHAS=NULL,N.DRAWS=NULL,CALIB.DEC.
             a.cur <- a.cur / 1.1
           }
           if (!REDRAW) {
-            #           permdata <- permdata[,as.logical(rej.ind)]
             permleft <- permleft[as.logical(rej.ind)]
           }
         } else { #a.cur is too small
@@ -1677,7 +1710,6 @@ GK.dist.inf.2s.calibrate <- function(NS=NULL,ALPHAS=NULL,N.DRAWS=NULL,CALIB.DEC.
           }
           if (!REDRAW) {
             rejs.known <- rejs #increased
-            #           permdata <- permdata[,!as.logical(rej.ind)]
             permleft <- permleft[!as.logical(rej.ind)]
           }
         }
@@ -1718,18 +1750,5 @@ GK.dist.inf.2s.calibrate <- function(NS=NULL,ALPHAS=NULL,N.DRAWS=NULL,CALIB.DEC.
   } #nind loop
   return(TRUE) #all went smoothly
 }
-
-# USE SEPARATE 1s AND 2s PLOTTING FUNCTIONS FOR NOW
-# GK.dist.inf.plot <- function(dist.inf.obj=NULL) {
-#   if (is.null(dist.inf.obj)) {stop("Please supply the list returned by GK.dist.inf as the argument.")}
-#   if (length(dist.inf.obj)==2) {
-#     GK.dist.inf.plot.1s(dist.inf.obj)
-#   } else if (length(dist.inf.obj)==5) {
-#     GK.dist.inf.plot.2s(dist.inf.obj)
-#   } else {
-#     stop(sprintf("Please supply the list returned by GK.dist.inf as the argument; should have length 2 (1s) or 5 (2s), but current length(dist.inf.obj)=%d",length(dist.inf.obj)))
-#   }
-# }
-
 
 #EOF
