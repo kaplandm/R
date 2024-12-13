@@ -1269,7 +1269,7 @@ GK.dist.inf.rej.2s <- function(n,L,U,H,ONESIDED=0) {
 # Function (subroutine): MTP rejections by sample value.
 # argument GK.dist.inf.obj is return value from two-sample call to GK.dist.inf()
 # return value: data.frame showing whether H_{0r} is rejected (reject=TRUE) or not (reject=FALSE) for each interval [from,to)
-GK.dist.inf.rej.2s.r <- function(GK.dist.inf.obj) {
+GK.dist.inf.rej.2s.r <- function(GK.dist.inf.obj, consolidate=TRUE) {
   obj <- GK.dist.inf.obj
   # consolidate any duplicate Ux or Uy, pull back "next" upper CI endpoint to mimic stairstep band
   dfX <- data.frame(from=c(-Inf, obj$U$x, Inf),
@@ -1317,7 +1317,20 @@ GK.dist.inf.rej.2s.r <- function(GK.dist.inf.obj) {
   df <- df[-excl.inds,]
   df <- df[!(df$from==Inf) , ]
   df$reject <- (df$CIx.lo > df$CIy.hi) | (df$CIx.hi < df$CIy.lo)
-  return(df[,c('from','to','reject','CIx.lo','CIx.hi','CIy.lo','CIy.hi')])
+  # Consolidate rows (if multiple FALSE in a row, or multiple TRUE in a row)
+  if (consolidate) {
+    delete.inds <- NULL  # redundant rows
+    for (i in 2:nrow(df)) {
+      if (df$reject[i]==df$reject[i-1]) {
+        df$from[i] <- df$from[i-1]
+        delete.inds <- c(delete.inds, i-1)
+      }
+    }
+    df <- df[ -delete.inds , c('from','to','reject')]
+  } else {
+    df <- df[,c('from','to','reject','CIx.lo','CIx.hi','CIy.lo','CIy.hi')]
+  }
+  return(df)
 }
 # If you need to compare: results from before 24oct2024 used the following
 OLD.GK.dist.inf.rej.2s.r <- function(GK.dist.inf.obj) {
